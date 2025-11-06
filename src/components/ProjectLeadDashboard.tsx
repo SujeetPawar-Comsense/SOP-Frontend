@@ -13,7 +13,7 @@ import BusinessRulesEditor from './BusinessRulesEditor'
 import { BusinessRulesConfig, createDefaultBusinessRulesConfig } from './BusinessRulesExcelUtils'
 import ActionsInteractionsEditor from './ActionsInteractionsEditor'
 import { ActionsInteractionsConfig, createDefaultActionsInteractionsConfig } from './ActionsInteractionsExcelUtils'
-import { apiClient } from '../utils/mockApi'
+import { apiClient } from '../utils/api'
 import { UserRole } from './RoleSelector'
 
 interface ProjectLeadDashboardProps {

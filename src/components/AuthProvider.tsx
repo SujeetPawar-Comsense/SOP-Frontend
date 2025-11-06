@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { authAPI, MockUser, MockSession } from '../utils/mockApi';
+import { authAPI, MockUser, MockSession } from '../utils/api';
 
 interface AuthContextType {
   user: MockUser | null;

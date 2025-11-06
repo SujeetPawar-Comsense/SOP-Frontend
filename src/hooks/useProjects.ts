@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { projectAPI, userStoriesAPI, modulesAPI, businessRulesAPI, uiuxAPI, actionsAPI, techStackAPI, documentsAPI } from '../utils/mockApi';
-import type { Project } from '../utils/mockApi';
+import { projectAPI, userStoriesAPI, modulesAPI, businessRulesAPI, uiuxAPI, actionsAPI, techStackAPI, documentsAPI } from '../utils/api';
+import type { Project } from '../utils/api';
 import { toast } from 'sonner';
 
 export type { Project };

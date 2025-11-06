@@ -9,11 +9,7 @@ import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import ProjectDocumentCreator from './ProjectDocumentCreator'
 import { UserRole } from './RoleSelector'
-// Mock API - no backend required
-const apiClient = {
-  get: async (url: string) => Promise.resolve({ data: null }),
-  post: async (url: string, data: any) => Promise.resolve({ data: null })
-}
+import { apiClient } from '../utils/api'
 
 export interface Project {
   id: string

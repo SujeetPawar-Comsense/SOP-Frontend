@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button'
 import { Loader2, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { promptsAPI } from '../utils/mockApi'
+import { promptsAPI } from '../utils/api'
 
 interface VibeEngineerDashboardProps {
   projectId: string
