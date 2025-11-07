@@ -166,6 +166,58 @@ export const projectAPI = {
 }
 
 // ============================================
+// PROJECT INFORMATION API
+// ============================================
+
+export const projectInformationAPI = {
+  get: async (projectId: string) => {
+    const { data, error } = await supabase
+      .from('project_information')
+      .select('*')
+      .eq('project_id', projectId)
+      .single()
+
+    if (error && error.code !== 'PGRST116') throw error
+    
+    // Transform snake_case to camelCase for frontend
+    const projectInfo = data ? {
+      vision: data.vision || '',
+      purpose: data.purpose || '',
+      objectives: data.objectives || '',
+      projectScope: data.project_scope || '',
+      functionalRequirements: data.functional_requirements || '',
+      nonFunctionalRequirements: data.non_functional_requirements || '',
+      integrationRequirements: data.integration_requirements || '',
+      reportingRequirements: data.reporting_requirements || ''
+    } : null
+
+    return { projectInformation: projectInfo }
+  },
+
+  save: async (projectId: string, projectInfo: any) => {
+    // Transform camelCase to snake_case for database
+    const { data, error } = await supabase
+      .from('project_information')
+      .upsert({
+        project_id: projectId,
+        vision: projectInfo.vision || null,
+        purpose: projectInfo.purpose || null,
+        objectives: projectInfo.objectives || null,
+        project_scope: projectInfo.projectScope || null,
+        functional_requirements: projectInfo.functionalRequirements || null,
+        non_functional_requirements: projectInfo.nonFunctionalRequirements || null,
+        integration_requirements: projectInfo.integrationRequirements || null,
+        reporting_requirements: projectInfo.reportingRequirements || null
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return { projectInformation: data }
+  }
+}
+
+// ============================================
 // USER STORIES API
 // ============================================
 
@@ -447,6 +499,8 @@ export const apiClient = {
     const endpoint = parts[3]
 
     switch (endpoint) {
+      case 'project-information':
+        return projectInformationAPI.get(projectId)
       case 'user-stories':
         return userStoriesAPI.get(projectId)
       case 'modules':
@@ -475,6 +529,8 @@ export const apiClient = {
     const endpoint = parts[3]
 
     switch (endpoint) {
+      case 'project-information':
+        return projectInformationAPI.save(projectId, data)
       case 'user-stories':
         return userStoriesAPI.save(projectId, data.userStories)
       case 'modules':

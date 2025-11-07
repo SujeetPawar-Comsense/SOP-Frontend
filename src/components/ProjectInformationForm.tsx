@@ -59,12 +59,48 @@ export default function ProjectInformationForm({ data, onChange, isProjectOvervi
   
   // Track which field is being cancelled (for confirmation dialog)
   const [cancellingField, setCancellingField] = useState<keyof ProjectInformation | null>(null)
+  
+  // Track if viewing scope as JSON or formatted
+  const [viewScopeAsJson, setViewScopeAsJson] = useState(false)
 
   // Sync local state when data prop changes (e.g., from file parsing)
   useEffect(() => {
     setSavedValues(data)
     setEditingValues(data)
   }, [data])
+  
+  // Helper to parse project scope safely
+  const parseProjectScope = (scopeStr: string) => {
+    try {
+      const parsed = JSON.parse(scopeStr)
+      return parsed
+    } catch {
+      return null
+    }
+  }
+  
+  // Helper to format scope for display
+  const formatScopeForDisplay = (scopeData: any) => {
+    if (!scopeData) return ''
+    
+    let formatted = ''
+    
+    if (scopeData.inScope && scopeData.inScope.length > 0) {
+      formatted += '✅ IN SCOPE:\n'
+      scopeData.inScope.forEach((item: string) => {
+        formatted += `• ${item}\n`
+      })
+    }
+    
+    if (scopeData.outOfScope && scopeData.outOfScope.length > 0) {
+      formatted += '\n❌ OUT OF SCOPE:\n'
+      scopeData.outOfScope.forEach((item: string) => {
+        formatted += `• ${item}\n`
+      })
+    }
+    
+    return formatted
+  }
 
   const handleFieldChange = (field: keyof ProjectInformation, value: string) => {
     setEditingValues({
@@ -238,34 +274,95 @@ export default function ProjectInformationForm({ data, onChange, isProjectOvervi
             <Label htmlFor="projectScope" className="text-base">
               Project Scope
             </Label>
-            <Textarea
-              id="projectScope"
-              value={editingValues.projectScope}
-              onChange={(e) => handleFieldChange('projectScope', e.target.value)}
-              placeholder="Define what is included and excluded from the project scope..."
-              rows={4}
-              className="resize-none border-primary/30 focus:border-primary/50"
-            />
-            <div className="flex justify-end">
-              {hasChanges('projectScope') && (
-                <div className="flex space-x-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleCancelClick('projectScope')}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={() => handleSave('projectScope')}
-                  >
-                    <Check className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
+            {(() => {
+              // Try to parse as JSON and display formatted
+              try {
+                const scopeData = JSON.parse(editingValues.projectScope || '{}')
+                const hasData = scopeData.inScope?.length > 0 || scopeData.outOfScope?.length > 0
+                
+                if (hasData) {
+                  return (
+                    <div className="space-y-4 p-4 border border-primary/30 rounded-lg bg-black/20">
+                      {scopeData.inScope && scopeData.inScope.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-green-400 mb-2">✅ In Scope:</h4>
+                          <ul className="space-y-1">
+                            {scopeData.inScope.map((item: string, idx: number) => (
+                              <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                                <span className="text-green-400 mt-1">•</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {scopeData.outOfScope && scopeData.outOfScope.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-red-400 mb-2">❌ Out of Scope:</h4>
+                          <ul className="space-y-1">
+                            {scopeData.outOfScope.map((item: string, idx: number) => (
+                              <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                                <span className="text-red-400 mt-1">•</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="flex justify-end pt-2 border-t border-primary/20">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const jsonStr = JSON.stringify(scopeData, null, 2)
+                            handleFieldChange('projectScope', jsonStr)
+                          }}
+                          className="text-xs"
+                        >
+                          Edit as JSON
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                }
+              } catch (e) {
+                // Not valid JSON or empty, show textarea
+              }
+              
+              // Fallback to textarea
+              return (
+                <>
+                  <Textarea
+                    id="projectScope"
+                    value={editingValues.projectScope}
+                    onChange={(e) => handleFieldChange('projectScope', e.target.value)}
+                    placeholder='Define what is included and excluded from the project scope...\n\nYou can use plain text or JSON format:\n{\n  "inScope": ["Feature 1", "Feature 2"],\n  "outOfScope": ["Feature 3"]\n}'
+                    rows={6}
+                    className="resize-none border-primary/30 focus:border-primary/50 font-mono text-sm"
+                  />
+                  <div className="flex justify-end">
+                    {hasChanges('projectScope') && (
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleCancelClick('projectScope')}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => handleSave('projectScope')}
+                        >
+                          <Check className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </CardContent>
       </Card>

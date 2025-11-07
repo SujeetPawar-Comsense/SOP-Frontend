@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, FolderOpen, Calendar, Users, FileText, Loader2, Upload } from 'lucide-react'
+import { Plus, FolderOpen, Calendar, Users, FileText, Loader2, Upload, Sparkles } from 'lucide-react'
 import { toast } from 'sonner@2.0.3'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card'
 import { Button } from './ui/button'
@@ -8,6 +8,7 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import ProjectDocumentCreator from './ProjectDocumentCreator'
+import BRDUploadModal from './BRDUploadModal'
 import { UserRole } from './RoleSelector'
 import { apiClient } from '../utils/api'
 
@@ -41,6 +42,7 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
   const [uploadProjectName, setUploadProjectName] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [isBRDModalOpen, setIsBRDModalOpen] = useState(false)
 
   const handleCreateProject = () => {
     if (!newProjectName.trim()) {
@@ -471,13 +473,14 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
           </div>
 
           {canCreateProject && (
-            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2 bg-primary hover:bg-primary/90 neon-glow">
-                  <Plus className="w-4 h-4" />
-                  New Project
-                </Button>
-              </DialogTrigger>
+            <div className="flex gap-3">
+              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-primary hover:bg-primary/90 neon-glow">
+                    <Plus className="w-4 h-4" />
+                    New Project
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="bg-card/95 backdrop-blur-sm border-primary/30">
                 <DialogHeader>
                   <DialogTitle className="bg-gradient-to-r from-primary to-cyan-400 bg-clip-text text-transparent">
@@ -517,7 +520,32 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
                 </div>
               </DialogContent>
             </Dialog>
+
+              {/* AI BRD Upload Button */}
+              <Button 
+                onClick={() => setIsBRDModalOpen(true)}
+                className="gap-2 bg-gradient-to-r from-cyan-600 to-primary hover:from-cyan-700 hover:to-primary/90 neon-glow"
+              >
+                <Sparkles className="w-4 h-4" />
+                Parse BRD with AI
+              </Button>
+            </div>
           )}
+
+          {/* BRD Upload Modal */}
+          <BRDUploadModal
+            open={isBRDModalOpen}
+            onClose={() => setIsBRDModalOpen(false)}
+            onSuccess={(projectId) => {
+              // Find and select the newly created project
+              const newProject = projects.find(p => p.id === projectId)
+              if (newProject) {
+                onProjectSelect(newProject)
+              }
+              // Refresh projects list
+              window.location.reload()
+            }}
+          />
         </div>
 
         {projects.length === 0 ? (

@@ -43,12 +43,9 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     setLoading(true)
     try {
       // Load project information
-      const projectResponse = await apiClient.get(`/projects/${projectId}`)
-      if (projectResponse.project.name) {
-        setProjectInformation(prev => ({
-          ...prev,
-          ...projectResponse.project
-        }))
+      const projectInfoResponse = await apiClient.get(`/projects/${projectId}/project-information`)
+      if (projectInfoResponse.projectInformation) {
+        setProjectInformation(projectInfoResponse.projectInformation)
       }
 
       // Load modules
@@ -138,11 +135,12 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   const saveProjectInformation = async (data: ProjectInformation) => {
     setSaving(true)
     try {
-      await apiClient.put(`/projects/${projectId}`, data)
+      await apiClient.post(`/projects/${projectId}/project-information`, data)
       setProjectInformation(data)
       toast.success('Project information saved')
     } catch (error: any) {
       toast.error('Failed to save project information')
+      console.error('Error:', error)
     } finally {
       setSaving(false)
     }
