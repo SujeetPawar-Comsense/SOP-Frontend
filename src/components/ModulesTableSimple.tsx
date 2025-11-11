@@ -46,7 +46,13 @@ export default function ModulesTable({
 
   const handleEdit = (module: ModuleFeature) => {
     setEditingId(module.id)
-    setEditForm({ ...module })
+    // Convert array dependencies to comma-separated string for editing
+    setEditForm({ 
+      ...module,
+      dependencies: Array.isArray(module.dependencies) 
+        ? module.dependencies.join(', ') 
+        : module.dependencies 
+    })
   }
 
   const handleSave = () => {
@@ -157,8 +163,8 @@ export default function ModulesTable({
                     <>
                       <TableCell>
                         <Input
-                          value={editForm.moduleName}
-                          onChange={(e) => setEditForm({ ...editForm, moduleName: e.target.value })}
+                          value={editForm.module_name}
+                          onChange={(e) => setEditForm({ ...editForm, module_name: e.target.value })}
                           placeholder="Module name..."
                           className="bg-input-background border-primary/30"
                           autoFocus
@@ -166,7 +172,7 @@ export default function ModulesTable({
                       </TableCell>
                       <TableCell>
                         <Input
-                          value={editForm.description}
+                          value={editForm.descripdescriptiontion}
                           onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                           placeholder="Description..."
                           className="bg-input-background border-primary/30"
@@ -241,15 +247,19 @@ export default function ModulesTable({
                     </>
                   ) : (
                     <>
-                      <TableCell className="font-medium">{module.moduleName}</TableCell>
+                      <TableCell className="font-medium">{module.module_name}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{module.description}</TableCell>
                       <TableCell>
                         <Badge className={getPriorityColor(module.priority)}>
                           {module.priority}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{module.businessImpact || '-'}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{module.dependencies || '-'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{module.business_impact || '-'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {Array.isArray(module.dependencies) 
+                          ? module.dependencies.join(', ') 
+                          : (module.dependencies || '-')}
+                      </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(module.status)}>
                           {module.status}

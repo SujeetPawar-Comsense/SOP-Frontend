@@ -81,8 +81,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ) => {
     try {
       await authAPI.signUp(email, password, name, role);
-      // After signup, sign in automatically
-      await signIn(email, password);
+      // Don't automatically sign in - user needs to verify email first
+      // Return success without signing in
     } catch (error) {
       console.error('Sign up error:', error);
       throw error;

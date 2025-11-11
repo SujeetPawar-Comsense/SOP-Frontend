@@ -48,9 +48,23 @@ interface ProjectInformationFormProps {
   isProjectOverviewComplete?: boolean
   isGenerating?: boolean
   onAIGeneration?: () => void
+  isAnalyzing?: boolean
+  analysisProgress?: string
+  onSaveAndContinue?: () => void
+  isLocked?: boolean
 }
 
-export default function ProjectInformationForm({ data, onChange, isProjectOverviewComplete, isGenerating, onAIGeneration }: ProjectInformationFormProps) {
+export default function ProjectInformationForm({ 
+  data, 
+  onChange, 
+  isProjectOverviewComplete, 
+  isGenerating, 
+  onAIGeneration,
+  isAnalyzing = false,
+  analysisProgress,
+  onSaveAndContinue,
+  isLocked = false
+}: ProjectInformationFormProps) {
   // Track original saved values for each field
   const [savedValues, setSavedValues] = useState<ProjectInformation>(data)
   
@@ -149,6 +163,33 @@ export default function ProjectInformationForm({ data, onChange, isProjectOvervi
 
   const hasChanges = (field: keyof ProjectInformation) => {
     return editingValues[field] !== savedValues[field]
+  }
+
+  // Show analyzing overlay if analyzing
+  if (isAnalyzing) {
+    return (
+      <div className="space-y-6">
+        <Card className="border-primary/20 bg-background/50">
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Analyzing BRD Document</h3>
+              <p className="text-muted-foreground text-center max-w-md">
+                {analysisProgress || 'Processing your Business Requirements Document to extract project overview information...'}
+              </p>
+              <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse delay-100" />
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse delay-200" />
+                </div>
+                <span>This may take a few moments</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -520,8 +561,22 @@ export default function ProjectInformationForm({ data, onChange, isProjectOvervi
         </CardContent>
       </Card>
 
-      {/* AI Generation Button */}
-      {isProjectOverviewComplete && onAIGeneration && (
+      {/* Save and Continue Button - shown when BRD data is loaded */}
+      {onSaveAndContinue && !isLocked && isProjectOverviewComplete && (
+        <div className="flex justify-center">
+          <Button
+            onClick={onSaveAndContinue}
+            size="lg"
+            className="gap-2 bg-primary hover:bg-primary/90 transition-all shadow-lg"
+          >
+            <Save className="w-5 h-5" />
+            Save and Continue
+          </Button>
+        </div>
+      )}
+
+      {/* AI Generation Button - shown when not in BRD flow */}
+      {isProjectOverviewComplete && onAIGeneration && !onSaveAndContinue && (
         <div className="flex justify-center">
           <TooltipProvider>
             <Tooltip>

@@ -1,20 +1,39 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { Loader2, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Loader2, CheckCircle2, ChevronLeft, ChevronRight, Lock, Trash2, Settings } from 'lucide-react'
 import { toast } from 'sonner@2.0.3'
 import { cn } from './ui/utils'
 import ProjectInformationForm, { ProjectInformation, createDefaultProjectInformation } from './ProjectInformationForm'
-import UserStoriesEditor, { UserStory } from './UserStoriesEditor'
+import { UserStory } from './UserStoriesEditor'
 import ModulesTable from './ModulesTableSimple'
+import UserStoriesAndFeatures from './UserStoriesAndFeatures'
 import { ModuleFeature } from './ExcelUtils'
-import FeaturesTasksEditor, { FeatureTask } from './FeaturesTasksEditor'
+import { FeatureTask } from './FeaturesTasksEditor'
 import BusinessRulesEditor from './BusinessRulesEditor'
 import { BusinessRulesConfig, createDefaultBusinessRulesConfig } from './BusinessRulesExcelUtils'
 import ActionsInteractionsEditor from './ActionsInteractionsEditor'
 import { ActionsInteractionsConfig, createDefaultActionsInteractionsConfig } from './ActionsInteractionsExcelUtils'
 import { apiClient } from '../utils/api'
 import { UserRole } from './RoleSelector'
+import AIGenerationModal from './AIGenerationModal'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from './ui/dropdown-menu'
 
 interface ProjectLeadDashboardProps {
   projectId: string
@@ -25,6 +44,17 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   const [activeSection, setActiveSection] = useState('projectInfo')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  
+  // BRD Analysis states
+  const [isFromBRD, setIsFromBRD] = useState(false)
+  const [isAnalyzingBRD, setIsAnalyzingBRD] = useState(false)
+  const [brdAnalysisProgress, setBrdAnalysisProgress] = useState('')
+  const [unlockedSections, setUnlockedSections] = useState<Set<string>>(new Set(['projectInfo']))
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [projectName, setProjectName] = useState('')
+  const [showAIGenerationModal, setShowAIGenerationModal] = useState(false)
+  const [brdContentForGeneration, setBrdContentForGeneration] = useState('')
   
   // Data states
   const [projectInformation, setProjectInformation] = useState<ProjectInformation>(createDefaultProjectInformation())
@@ -38,6 +68,183 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   useEffect(() => {
     loadProjectData()
   }, [projectId])
+  
+  // Get project name
+  useEffect(() => {
+    getProjectDetails()
+  }, [projectId])
+  
+  const getProjectDetails = async () => {
+    try {
+      const response = await apiClient.get(`/projects/${projectId}`)
+      if (response.project) {
+        setProjectName(response.project.name)
+      }
+    } catch (error) {
+      console.error('Failed to get project details:', error)
+    }
+  }
+  
+  const handleDeleteProject = async () => {
+    setIsDeleting(true)
+    try {
+      const response = await apiClient.delete(`/projects/${projectId}`)
+      if (response.success) {
+        toast.success('Project deleted successfully')
+        // Navigate back to project selector
+        window.location.href = '/'
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete project')
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteDialog(false)
+    }
+  }
+  
+  // Check if this project was created from BRD
+  useEffect(() => {
+    checkIfFromBRD()
+  }, [projectId])
+  
+  const checkIfFromBRD = async () => {
+    try {
+      const response = await apiClient.get(`/projects/${projectId}`)
+      if (response.project?.from_brd) {
+        setIsFromBRD(true)
+        
+        // Check if project information already exists (might have been created during BRD upload)
+        const projectInfoResponse = await apiClient.get(`/projects/${projectId}/project-information`)
+        
+        if (projectInfoResponse.projectInformation && 
+            (projectInfoResponse.projectInformation.vision || 
+             projectInfoResponse.projectInformation.purpose)) {
+          // Project overview already exists, no need to analyze again
+          console.log('Project overview already exists from BRD creation')
+          setProjectInformation(projectInfoResponse.projectInformation)
+        } else if (response.project.brd_content) {
+          // Project info doesn't exist, analyze the BRD
+          console.log('Project overview not found, analyzing BRD...')
+          analyzeBRDOverview(response.project.brd_content)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check BRD status:', error)
+    }
+  }
+  
+  const analyzeBRDOverview = async (brdContent: string) => {
+    setIsAnalyzingBRD(true)
+    setBrdAnalysisProgress('Analyzing your Business Requirements Document...')
+    
+    try {
+      const response = await apiClient.post('/brd/analyze-overview', { brdContent })
+      
+      if (response.projectOverview) {
+        const { businessIntent, requirements } = response.projectOverview
+        
+        // Convert to ProjectInformation format
+        const projectInfo: ProjectInformation = {
+          vision: businessIntent?.vision || '',
+          purpose: businessIntent?.purpose || '',
+          objectives: businessIntent?.objectives?.join('\n') || '',
+          projectScope: JSON.stringify(businessIntent?.projectScope) || '',
+          functionalRequirements: requirements?.functional?.join('\n') || '',
+          nonFunctionalRequirements: requirements?.nonFunctional?.join('\n') || '',
+          integrationRequirements: requirements?.integration?.join('\n') || '',
+          reportingRequirements: requirements?.reporting?.join('\n') || ''
+        }
+        
+        setProjectInformation(projectInfo)
+        setBrdAnalysisProgress('Analysis complete! Review the extracted information below.')
+        
+        // Save to backend
+        await saveProjectInformation(projectInfo)
+      }
+    } catch (error: any) {
+      toast.error('Failed to analyze BRD: ' + error.message)
+      setBrdAnalysisProgress('')
+    } finally {
+      setIsAnalyzingBRD(false)
+    }
+  }
+  
+  const handleSaveAndContinue = async () => {
+    // Save current data
+    await saveProjectInformation(projectInformation)
+    
+    // If this is a BRD project and we're moving from projectInfo to modules
+    if (isFromBRD && activeSection === 'projectInfo') {
+      // Get BRD content for generation
+      try {
+        const response = await apiClient.get(`/projects/${projectId}`)
+        if (response.project?.brd_content) {
+          setBrdContentForGeneration(response.project.brd_content)
+          // Show AI generation modal
+          setShowAIGenerationModal(true)
+        } else {
+          // No BRD content, just unlock next section normally
+          unlockNextSection()
+        }
+      } catch (error) {
+        console.error('Failed to get BRD content:', error)
+        unlockNextSection()
+      }
+    } else {
+      unlockNextSection()
+    }
+    
+    toast.success('Progress saved!')
+  }
+  
+  const unlockNextSection = () => {
+    const sectionsOrder = ['projectInfo', 'modules', 'userStoriesFeatures', 'businessRules', 'actions']
+    const currentIndex = sectionsOrder.indexOf(activeSection)
+    
+    if (currentIndex < sectionsOrder.length - 1) {
+      const nextSection = sectionsOrder[currentIndex + 1]
+      setUnlockedSections(prev => new Set([...prev, nextSection]))
+      setActiveSection(nextSection)
+    }
+  }
+  
+  const handleAIGenerationComplete = async (generatedData: any) => {
+    console.log('AI Generation complete:', generatedData)
+    
+    // Reload all data to get the newly generated content
+    await loadProjectData()
+    
+    // Unlock all sections since we have generated everything
+    setUnlockedSections(new Set(['projectInfo', 'modules', 'userStoriesFeatures', 'businessRules', 'actions']))
+    
+    // Move to modules section
+    setActiveSection('modules')
+    
+    // Close the modal
+    setShowAIGenerationModal(false)
+    
+    toast.success('AI has generated your project structure!')
+  }
+  
+  // Convert project information to the format expected by the API
+  const getProjectOverviewForAPI = () => {
+    return {
+      projectName: projectName,
+      projectDescription: '', // This would come from project description
+      businessIntent: {
+        vision: projectInformation.vision,
+        purpose: projectInformation.purpose,
+        objectives: projectInformation.objectives.split('\n').filter(o => o.trim()),
+        projectScope: projectInformation.projectScope ? JSON.parse(projectInformation.projectScope) : { inScope: [], outOfScope: [] }
+      },
+      requirements: {
+        functional: projectInformation.functionalRequirements.split('\n').filter(r => r.trim()),
+        nonFunctional: projectInformation.nonFunctionalRequirements.split('\n').filter(r => r.trim()),
+        integration: projectInformation.integrationRequirements.split('\n').filter(r => r.trim()),
+        reporting: projectInformation.reportingRequirements.split('\n').filter(r => r.trim())
+      }
+    }
+  }
 
   const loadProjectData = async () => {
     setLoading(true)
@@ -304,41 +511,51 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     return { completed, total }
   }
 
+  // Combined completion calculation for user stories and features
+  const calculateStoriesAndFeaturesCompletion = () => {
+    const storiesComp = calculateUserStoriesCompletion()
+    const featuresComp = calculateFeaturesCompletion()
+    
+    const totalCompleted = storiesComp.completed + featuresComp.completed
+    const totalItems = storiesComp.total + featuresComp.total
+    
+    return { completed: totalCompleted, total: totalItems }
+  }
+
   const sections = [
     { 
       id: 'projectInfo', 
       label: 'Project Overview', 
       icon: '📋',
+      description: 'Define project details and objectives',
       getCompletion: calculateProjectInfoCompletion
     },
     { 
       id: 'modules', 
       label: 'Modules', 
       icon: '📦',
+      description: 'Define and organize project modules',
       getCompletion: calculateModulesCompletion
     },
     { 
-      id: 'userStories', 
-      label: 'User Stories', 
-      icon: '📝',
-      getCompletion: calculateUserStoriesCompletion
-    },
-    { 
-      id: 'features', 
-      label: 'Features/Tasks', 
-      icon: '🔧',
-      getCompletion: calculateFeaturesCompletion
+      id: 'userStoriesFeatures', 
+      label: 'User Stories & Features', 
+      icon: '📚',
+      description: 'Manage user stories and their features',
+      getCompletion: calculateStoriesAndFeaturesCompletion
     },
     { 
       id: 'businessRules', 
       label: 'Business Rules', 
       icon: '⚖️',
+      description: 'Define business logic and validation rules',
       getCompletion: calculateBusinessRulesCompletion
     },
     { 
       id: 'actions', 
       label: 'Actions & Interactions', 
       icon: '⚡',
+      description: 'Configure user actions and system interactions',
       getCompletion: calculateActionsCompletion
     },
   ]
@@ -358,23 +575,47 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     <div className="container mx-auto p-6 space-y-6">
       {/* Section Cards Navigation */}
       <div>
-        <h2 className="text-2xl mb-4">Project Setup</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl">Project Setup{projectName ? `: ${projectName}` : ''}</h2>
+          {userRole === 'project_owner' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <Settings className="h-4 w-4" />
+                  Options
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setShowDeleteDialog(true)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Project
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {sections.map((section) => {
             const { completed, total } = section.getCompletion()
             const isComplete = completed === total && total > 0
             const isActive = activeSection === section.id
+            const isLocked = isFromBRD && !unlockedSections.has(section.id)
             const progress = total > 0 ? (completed / total) * 100 : 0
 
             return (
               <Card
                 key={section.id}
                 className={cn(
-                  "cursor-pointer transition-all hover:shadow-lg relative overflow-hidden",
+                  "transition-all relative overflow-hidden",
+                  !isLocked && "cursor-pointer hover:shadow-lg",
                   isActive && "border-primary border-2 shadow-lg shadow-primary/20",
-                  isComplete && !isActive && "border-green-500/50"
+                  isComplete && !isActive && "border-green-500/50",
+                  isLocked && "opacity-50 cursor-not-allowed"
                 )}
-                onClick={() => setActiveSection(section.id)}
+                onClick={() => !isLocked && setActiveSection(section.id)}
               >
                 {/* Progress bar at top */}
                 <div className="absolute top-0 left-0 right-0 h-1 bg-muted">
@@ -390,13 +631,16 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle className="text-base">{section.label}</CardTitle>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        {section.label}
+                        {isLocked && <Lock className="w-4 h-4 text-muted-foreground" />}
+                      </CardTitle>
                       <CardDescription className="text-sm mt-1">
-                        {section.description}
+                        {isLocked ? 'Complete previous section to unlock' : section.description}
                       </CardDescription>
                     </div>
                     <div className="px-3 py-1 rounded bg-gray-800/50 border border-gray-700/50 text-sm text-gray-400 flex-shrink-0">
-                      {completed}/{total}
+                      {isLocked ? '🔒' : `${completed}/${total}`}
                     </div>
                   </div>
                 </CardHeader>
@@ -412,6 +656,15 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           <ProjectInformationForm
             data={projectInformation}
             onChange={saveProjectInformation}
+            isAnalyzing={isAnalyzingBRD}
+            analysisProgress={brdAnalysisProgress}
+            onSaveAndContinue={isFromBRD ? handleSaveAndContinue : undefined}
+            isLocked={false}
+            isProjectOverviewComplete={Boolean(
+              projectInformation.vision &&
+              projectInformation.purpose &&
+              projectInformation.objectives
+            )}
           />
         )}
 
@@ -422,20 +675,68 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           />
         )}
 
-        {activeSection === 'userStories' && (
-          <UserStoriesEditor
-            userStories={userStories}
-            onChange={saveUserStories}
+        {activeSection === 'userStoriesFeatures' && (
+          <UserStoriesAndFeatures
             modules={modules}
-          />
-        )}
-
-        {activeSection === 'features' && (
-          <FeaturesTasksEditor
+            userStories={userStories}
             features={features}
-            onChange={saveFeatures}
-            userStories={userStories}
-            modules={modules}
+            onUserStoryEdit={(story) => {
+              // Create a copy of the story and update it
+              const updatedStories = userStories.map(s => 
+                s.id === story.id ? story : s
+              )
+              saveUserStories(updatedStories)
+            }}
+            onFeatureEdit={(feature) => {
+              // Create a copy of the feature and update it
+              const updatedFeatures = features.map(f => 
+                f.id === feature.id ? feature : f
+              )
+              saveFeatures(updatedFeatures)
+            }}
+            onUserStoryDelete={(storyId) => {
+              const updatedStories = userStories.filter(s => s.id !== storyId)
+              saveUserStories(updatedStories)
+            }}
+            onFeatureDelete={(featureId) => {
+              const updatedFeatures = features.filter(f => f.id !== featureId)
+              saveFeatures(updatedFeatures)
+            }}
+            onAddUserStory={(moduleId) => {
+              // Create a new user story for the module
+              const newStory: UserStory = {
+                id: `story-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                title: 'New User Story',
+                userRole: 'User',
+                description: '',
+                moduleId: moduleId,
+                acceptanceCriteria: [],
+                priority: 'Medium',
+                estimatedEffort: '',
+                status: 'Not Started'
+              }
+              saveUserStories([...userStories, newStory])
+            }}
+            onAddFeature={(userStoryId) => {
+              // Create a new feature for the user story
+              const userStory = userStories.find(s => s.id === userStoryId)
+              if (userStory) {
+                const newFeature: FeatureTask = {
+                  id: `feature-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  title: 'New Feature',
+                  description: '',
+                  userStoryId: userStoryId,
+                  moduleId: userStory.moduleId,
+                  technicalDetails: '',
+                  dependencies: [],
+                  estimatedHours: 0,
+                  priority: 'Medium',
+                  status: 'Not Started'
+                }
+                saveFeatures([...features, newFeature])
+              }
+            }}
+            readOnly={userRole === 'viewer'}
           />
         )}
 
@@ -491,6 +792,58 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           </Button>
         </div>
       </div>
+
+      {/* AI Generation Modal */}
+      <AIGenerationModal
+        open={showAIGenerationModal}
+        onClose={() => setShowAIGenerationModal(false)}
+        onComplete={handleAIGenerationComplete}
+        projectId={projectId}
+        projectOverview={getProjectOverviewForAPI()}
+        brdContent={brdContentForGeneration}
+      />
+
+      {/* Delete Project Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{projectName}"? This will permanently delete:
+              <ul className="mt-2 ml-4 list-disc text-sm">
+                <li>All project information and settings</li>
+                <li>All modules and features</li>
+                <li>All user stories</li>
+                <li>All business rules</li>
+                <li>All generated prompts and documentation</li>
+              </ul>
+              <span className="text-destructive font-semibold block mt-2">
+                This action cannot be undone.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProject}
+              disabled={isDeleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Project
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -80,13 +80,174 @@ export default function BRDParseResultsView({ parsedBRD, project, onClose }: BRD
       </div>
 
       {/* Tabs for Different Sections */}
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 bg-card/50 border border-primary/20">
+      <Tabs defaultValue="structure" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 bg-card/50 border border-primary/20">
+          <TabsTrigger value="structure">📦 Project Structure</TabsTrigger>
           <TabsTrigger value="overview">📋 Overview</TabsTrigger>
-          <TabsTrigger value="modules">📦 Modules</TabsTrigger>
-          <TabsTrigger value="stories">📝 All Stories</TabsTrigger>
-          <TabsTrigger value="rules">⚖️ Rules</TabsTrigger>
+          <TabsTrigger value="rules">⚖️ Business Rules</TabsTrigger>
         </TabsList>
+
+        {/* Project Structure Tab - Hierarchical View */}
+        <TabsContent value="structure" className="space-y-3">
+          <div className="p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+            <p className="text-sm font-semibold text-cyan-400">
+              📊 Complete Project Structure - Click to expand modules and user stories
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {modules?.length || 0} modules • {modules?.reduce((a: number, m: any) => a + (m.userStories?.length || 0), 0)} user stories • {modules?.reduce((a: number, m: any) => a + m.userStories?.reduce((sa: number, s: any) => sa + (s.features?.length || 0), 0), 0)} features
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {modules?.map((module: any, moduleIdx: number) => (
+              <Card key={moduleIdx} className="border-primary/30 bg-gradient-to-r from-primary/5 to-cyan-500/5">
+                <CardHeader 
+                  className="cursor-pointer hover:bg-primary/10 transition-colors"
+                  onClick={() => toggleModule(moduleIdx)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-base text-primary flex items-center gap-3">
+                        <span className="text-2xl font-bold text-cyan-400">{moduleIdx + 1}</span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            {module.moduleName}
+                            <Badge variant="outline" className="text-xs bg-cyan-500/20 border-cyan-500/50">
+                              {module.userStories?.length || 0} stories • {module.userStories?.reduce((acc: number, s: any) => acc + (s.features?.length || 0), 0) || 0} features
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground font-normal mt-1">
+                            {module.moduleDescription}
+                          </p>
+                        </div>
+                      </CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {expandedModules.has(moduleIdx) ? (
+                        <ChevronUp className="w-5 h-5 text-cyan-400" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+
+                {expandedModules.has(moduleIdx) && (
+                  <CardContent className="space-y-3 pt-0 pl-12">
+                    {module.userStories?.length > 0 ? (
+                      module.userStories.map((story: any, storyIdx: number) => {
+                        const storyKey = `${moduleIdx}-${storyIdx}`
+                        const isStoryExpanded = expandedStories.has(storyKey)
+
+                        return (
+                          <div key={storyIdx} className="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+                            <div 
+                              className="cursor-pointer hover:bg-cyan-500/20 p-2 -m-2 rounded transition-colors"
+                              onClick={() => toggleStory(storyKey)}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-cyan-400 font-bold">{moduleIdx + 1}.{storyIdx + 1}</span>
+                                    <p className="text-sm font-semibold text-cyan-400">
+                                      📝 {story.title}
+                                    </p>
+                                    <Badge 
+                                      variant={story.priority === 'High' ? 'destructive' : story.priority === 'Medium' ? 'default' : 'secondary'}
+                                      className="text-xs"
+                                    >
+                                      {story.priority}
+                                    </Badge>
+                                    <Badge variant="outline" className="text-xs">
+                                      {story.features?.length || 0} features
+                                    </Badge>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground italic pl-8">
+                                    {story.userStory}
+                                  </p>
+                                </div>
+                                {isStoryExpanded ? (
+                                  <ChevronUp className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                )}
+                              </div>
+                            </div>
+
+                            {isStoryExpanded && (
+                              <div className="mt-4 space-y-3 pl-6">
+                                {/* Acceptance Criteria */}
+                                {story.acceptanceCriteria?.length > 0 && (
+                                  <div className="p-3 bg-black/30 border border-cyan-500/20 rounded">
+                                    <p className="text-xs font-semibold text-cyan-400 mb-2">✅ Acceptance Criteria:</p>
+                                    <ul className="space-y-1.5">
+                                      {story.acceptanceCriteria.map((criteria: string, i: number) => (
+                                        <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                                          <span className="text-cyan-400 mt-0.5 flex-shrink-0">✓</span>
+                                          <span>{criteria}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {/* Features */}
+                                {story.features?.length > 0 && (
+                                  <div>
+                                    <p className="text-sm font-semibold text-primary mb-2">
+                                      🔧 Features & Tasks ({story.features.length})
+                                    </p>
+                                    <div className="space-y-2">
+                                      {story.features.map((feature: any, fIdx: number) => (
+                                        <div key={fIdx} className="p-3 bg-black/40 border border-primary/30 rounded-lg hover:border-primary/50 transition-colors">
+                                          <div className="flex items-start justify-between gap-2 mb-2">
+                                            <p className="text-sm font-semibold text-primary flex items-center gap-2">
+                                              <span className="text-cyan-400">{moduleIdx + 1}.{storyIdx + 1}.{fIdx + 1}</span>
+                                              🔧 {feature.featureName}
+                                            </p>
+                                            <Badge 
+                                              variant={feature.priority === 'High' ? 'destructive' : feature.priority === 'Medium' ? 'default' : 'secondary'}
+                                              className="text-[10px] px-1.5 py-0.5 flex-shrink-0"
+                                            >
+                                              {feature.priority}
+                                            </Badge>
+                                          </div>
+                                          <p className="text-xs text-muted-foreground mb-2 pl-8">
+                                            {feature.taskDescription}
+                                          </p>
+                                          
+                                          {feature.acceptanceCriteria?.length > 0 && (
+                                            <div className="mt-2 pl-8 pt-2 border-t border-primary/20">
+                                              <p className="text-[10px] font-semibold text-primary mb-1">Acceptance Criteria:</p>
+                                              <ul className="space-y-0.5">
+                                                {feature.acceptanceCriteria.map((criteria: string, i: number) => (
+                                                  <li key={i} className="text-[10px] text-muted-foreground flex items-start gap-1.5">
+                                                    <span className="text-primary mt-0.5">•</span>
+                                                    <span>{criteria}</span>
+                                                  </li>
+                                                ))}
+                                              </ul>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">No user stories in this module</p>
+                    )}
+                  </CardContent>
+                )}
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4">
@@ -334,34 +495,6 @@ export default function BRDParseResultsView({ parsedBRD, project, onClose }: BRD
               )}
             </Card>
           ))}
-        </TabsContent>
-
-        {/* All Stories Tab */}
-        <TabsContent value="stories" className="space-y-2 max-h-[500px] overflow-y-auto">
-          {modules?.map((module: any, mIdx: number) =>
-            module.userStories?.map((story: any, sIdx: number) => (
-              <Card key={`${mIdx}-${sIdx}`} className="border-cyan-500/20">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-sm text-cyan-400">{story.title}</CardTitle>
-                      <CardDescription className="text-xs mt-1">Module: {module.moduleName}</CardDescription>
-                    </div>
-                    <Badge variant="secondary" className="text-xs">{story.priority}</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="text-xs text-muted-foreground italic">{story.userStory}</p>
-                  <div>
-                    <p className="text-xs font-semibold text-primary">Features: {story.features?.length || 0}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {story.features?.map((f: any) => f.featureName).join(', ')}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
         </TabsContent>
 
         {/* Business Rules Tab */}

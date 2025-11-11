@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { UserPlus, AlertCircle } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { toast } from 'sonner@2.0.3';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -40,6 +41,9 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
 
     try {
       await signUp(email, password, name, role);
+      // Signup successful - redirect to login
+      toast.success('Account created successfully! Please sign in.');
+      onSwitchToLogin();
     } catch (err: any) {
       // Parse error message and make it user-friendly
       let errorMessage = err.message || 'Failed to sign up. Please try again.';

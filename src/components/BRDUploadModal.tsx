@@ -48,6 +48,11 @@ export default function BRDUploadModal({ open, onClose, onSuccess }: BRDUploadMo
       return
     }
 
+    if (!projectName.trim()) {
+      toast.error('Please enter a project name')
+      return
+    }
+
     setParsing(true)
     setParseResult(null)
 
@@ -61,10 +66,10 @@ export default function BRDUploadModal({ open, onClose, onSuccess }: BRDUploadMo
         return
       }
 
-      console.log('🤖 Sending BRD to AI for parsing...')
+      console.log('🤖 Creating project and analyzing BRD...')
 
-      // Call backend BRD parsing API
-      const response = await fetch('http://localhost:3000/api/brd/parse', {
+      // Call backend to create project and analyze BRD
+      const response = await fetch('http://localhost:3000/api/brd/create-from-brd', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -72,20 +77,25 @@ export default function BRDUploadModal({ open, onClose, onSuccess }: BRDUploadMo
         },
         body: JSON.stringify({
           brdContent,
-          projectName: projectName.trim() || undefined
+          projectName: projectName.trim()
         })
       })
 
       const result = await response.json()
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to parse BRD')
+        throw new Error(result.error || 'Failed to create project from BRD')
       }
 
-      console.log('✅ BRD parsed successfully:', result)
+      console.log('✅ Project created and analyzed:', result)
       setParseResult(result)
 
-      toast.success('BRD parsed successfully! Project created.')
+      // Show success with more detail about what was analyzed
+      if (result.projectOverview) {
+        toast.success('Project created and analyzed successfully! Project overview has been extracted.')
+      } else {
+        toast.success('Project created! You can now proceed to set up your project.')
+      }
 
       // Close modal and notify parent
       setTimeout(() => {

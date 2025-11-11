@@ -7,7 +7,7 @@ export interface ModuleFeature {
   description: string
   priority: 'High' | 'Medium' | 'Low'
   businessImpact: string
-  dependencies: string
+  dependencies: string | string[] // Can be either string or array from backend
   status: 'Not Started' | 'In Progress' | 'Completed'
   userStoryId?: string // Optional: Links module to a user story
 }
@@ -63,7 +63,9 @@ export const exportModulesToExcel = (modules: ModuleFeature[], projectName: stri
     'Description': module.description,
     'Priority': module.priority,
     'Business Impact': module.businessImpact,
-    'Dependencies': module.dependencies,
+    'Dependencies': Array.isArray(module.dependencies) 
+      ? module.dependencies.join(', ') 
+      : module.dependencies,
     'Status': module.status
   }))
 

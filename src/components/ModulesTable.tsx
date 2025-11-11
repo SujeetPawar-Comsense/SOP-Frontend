@@ -51,7 +51,13 @@ export default function ModulesTable({
 
   const handleEdit = (module: ModuleFeature) => {
     setEditingId(module.id)
-    setEditForm({ ...module })
+    // Convert array dependencies to comma-separated string for editing
+    setEditForm({ 
+      ...module,
+      dependencies: Array.isArray(module.dependencies) 
+        ? module.dependencies.join(', ') 
+        : module.dependencies 
+    })
   }
 
   const handleSave = () => {
@@ -858,7 +864,11 @@ export default function ModulesTable({
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm">{module.businessImpact}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{module.dependencies || '-'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {Array.isArray(module.dependencies) 
+                            ? module.dependencies.join(', ') 
+                            : (module.dependencies || '-')}
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             <Badge variant="outline" className={getStatusColor(module.status)}>

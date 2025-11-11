@@ -1,9 +1,25 @@
 import { useState } from 'react'
-import { Plus, FolderOpen, Calendar, Users, FileText, Loader2, Upload, Sparkles } from 'lucide-react'
+import { Plus, FolderOpen, Calendar, Users, FileText, Loader2, Upload, Sparkles, Trash2, MoreVertical } from 'lucide-react'
 import { toast } from 'sonner@2.0.3'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card'
 import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
@@ -43,6 +59,8 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
   const [isProcessing, setIsProcessing] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [isBRDModalOpen, setIsBRDModalOpen] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const handleCreateProject = () => {
     if (!newProjectName.trim()) {
@@ -57,6 +75,26 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
   }
 
   const canCreateProject = currentRole === 'project_owner'
+  const canDeleteProject = currentRole === 'project_owner'
+
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const response = await apiClient.delete(`/projects/${projectToDelete.id}`)
+      if (response.success) {
+        toast.success('Project deleted successfully')
+        // Reload the page to refresh the project list
+        window.location.reload()
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete project')
+    } finally {
+      setIsDeleting(false)
+      setProjectToDelete(null)
+    }
+  }
 
   const handleCreateDocument = () => {
     setShowProjectDocumentCreator(true)
@@ -574,18 +612,53 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
             {projects.map((project) => (
               <Card
                 key={project.id}
-                className="border-primary/20 bg-card/80 backdrop-blur-sm hover:border-primary/40 transition-all cursor-pointer hover:scale-105 neon-glow"
-                onClick={() => onProjectSelect(project)}
+                className="border-primary/20 bg-card/80 backdrop-blur-sm hover:border-primary/40 transition-all hover:scale-105 neon-glow relative"
               >
                 <CardHeader>
-                  <CardTitle className="bg-gradient-to-r from-primary to-cyan-400 bg-clip-text text-transparent">
-                    {project.name}
-                  </CardTitle>
-                  <CardDescription className="line-clamp-2">
-                    {project.description || 'No description provided'}
-                  </CardDescription>
+                  <div className="flex items-start justify-between">
+                    <div 
+                      className="flex-1 cursor-pointer"
+                      onClick={() => onProjectSelect(project)}
+                    >
+                      <CardTitle className="bg-gradient-to-r from-primary to-cyan-400 bg-clip-text text-transparent">
+                        {project.name}
+                      </CardTitle>
+                      <CardDescription className="line-clamp-2 mt-1">
+                        {project.description || 'No description provided'}
+                      </CardDescription>
+                    </div>
+                    {canDeleteProject && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 -mr-2 -mt-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setProjectToDelete(project)
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete Project
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent 
+                  className="cursor-pointer"
+                  onClick={() => onProjectSelect(project)}
+                >
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Calendar className="w-4 h-4" />
@@ -614,6 +687,46 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{projectToDelete?.name}"? This will permanently delete the project and all its data including:
+              <ul className="mt-2 ml-4 list-disc text-sm">
+                <li>All modules and features</li>
+                <li>All user stories</li>
+                <li>All business rules</li>
+                <li>All generated prompts</li>
+                <li>All project documentation</li>
+              </ul>
+              <span className="text-destructive font-semibold">This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProject}
+              disabled={isDeleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Project
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

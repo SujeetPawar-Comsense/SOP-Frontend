@@ -25,52 +25,90 @@ export const authAPI = {
     name: string,
     role: 'project_owner' | 'vibe_engineer'
   ) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name, role }
-      }
-    })
-
-    if (error) throw error
-    if (!data.user) throw new Error('User creation failed')
-
-    // Create user profile
-    const { error: profileError } = await supabase
-      .from('users')
-      .insert({
-        id: data.user.id,
-        email,
-        name,
-        role
+    try {
+      // Call backend signup endpoint which handles both auth and user profile creation
+      const response = await fetch('http://localhost:3000/api/auth/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          name,
+          role
+        })
       })
 
-    // Ignore duplicate key error (profile might already exist from trigger)
-    if (profileError && profileError.code !== '23505') {
-      throw profileError
-    }
+      const result = await response.json()
 
-    return { user: data.user }
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || result.error || 'Signup failed')
+      }
+
+      return { user: result.user }
+    } catch (error: any) {
+      console.error('Signup error:', error)
+      throw error
+    }
   },
 
   signIn: async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
+    try {
+      // Call backend signin endpoint
+      const response = await fetch('http://localhost:3000/api/auth/signin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email,
+          password
+        })
+      })
 
-    if (error) throw error
+      const result = await response.json()
 
-    return {
-      session: data.session,
-      user: data.user
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Invalid email or password')
+      }
+
+      // Store the session in Supabase client for other API calls
+      if (result.session) {
+        await supabase.auth.setSession(result.session)
+      }
+
+      return {
+        session: result.session,
+        user: result.user
+      }
+    } catch (error: any) {
+      console.error('Signin error:', error)
+      throw error
     }
   },
 
   signOut: async () => {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
+    try {
+      // Call backend signout endpoint
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (session) {
+        await fetch('http://localhost:3000/api/auth/signout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
+      }
+
+      // Clear local session
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.error('Signout error:', error)
+      // Continue with local signout even if backend fails
+      await supabase.auth.signOut()
+    }
   },
 
   getSession: async () => {
