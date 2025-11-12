@@ -123,7 +123,11 @@ export default function ModulesHierarchy({
   }
 
   const getUserStoryStats = (userStoryId: string) => {
-    const storyFeatures = features.filter(f => f.userStoryId === userStoryId)
+    const storyFeatures = features.filter(f => 
+      f.userStoryId === userStoryId || 
+      (f as any).user_story_id === userStoryId || // Check snake_case version too
+      String(f.userStoryId) === String(userStoryId) // Ensure string comparison
+    )
     const completedFeatures = storyFeatures.filter(f => f.status === 'Completed').length
     
     return {
@@ -264,7 +268,11 @@ export default function ModulesHierarchy({
                       ) : (
                         moduleStories.map((userStory) => {
                           const isStoryExpanded = expandedUserStories.has(userStory.id)
-                          const storyFeatures = features.filter(f => f.userStoryId === userStory.id)
+                          const storyFeatures = features.filter(f => 
+                            f.userStoryId === userStory.id || 
+                            (f as any).user_story_id === userStory.id || // Check snake_case version too
+                            String(f.userStoryId) === String(userStory.id) // Ensure string comparison
+                          )
                           const storyStats = getUserStoryStats(userStory.id)
                           const isStorySelected = selectedUserStory === userStory.id
 

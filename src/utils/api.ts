@@ -1,5 +1,8 @@
 import { supabase } from './supabaseClient'
 
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+
 // ============================================
 // AUTHENTICATION API
 // ============================================
@@ -126,6 +129,23 @@ export const authAPI = {
 // PROJECT API
 // ============================================
 
+export type ApplicationType = 
+  | 'Batch Application' 
+  | 'Web Application' 
+  | 'Website' 
+  | 'Microservices';
+
+export type DevelopmentType = 
+  | 'Frontend'
+  | 'Backend API'
+  | 'Database Schema'
+  | 'Unit Tests'
+  | 'Integration Tests'
+  | 'Batch Application'
+  | 'Microservices'
+  | 'CI/CD Pipeline'
+  | 'Documentation';
+
 export interface Project {
   id: string
   name: string
@@ -136,12 +156,35 @@ export interface Project {
   created_by_role: string
   completion_percentage: number
   updated_at: string
+  application_type?: ApplicationType
+}
+
+export interface VibePrompt {
+  id: string
+  project_id: string
+  prompt_type: string
+  generated_prompt: string
+  context: {
+    role: string
+    developmentType: DevelopmentType
+    applicationType?: ApplicationType
+    previousOutputsCount: number
+    generatedAt: string
+  }
+  created_at: string
 }
 
 export const projectAPI = {
   create: async (projectData: { name: string; description: string }) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not authenticated')
+    
+    // Get the user's name from the users table for better reliability
+    const { data: userProfile } = await supabase
+      .from('users')
+      .select('name, role')
+      .eq('id', user.id)
+      .single()
 
     const { data, error } = await supabase
       .from('projects')
@@ -149,14 +192,30 @@ export const projectAPI = {
         name: projectData.name,
         description: projectData.description,
         created_by: user.id,
-        created_by_name: user.user_metadata.name || user.email,
-        created_by_role: user.user_metadata.role || 'vibe_engineer'
+        created_by_name: userProfile?.name || user.user_metadata.name || user.email?.split('@')[0] || 'Unknown User',
+        created_by_role: userProfile?.role || user.user_metadata.role || 'vibe_engineer',
+        completion_percentage: 0
       })
       .select()
       .single()
 
     if (error) throw error
-    return { project: data }
+    
+    // Map snake_case to camelCase for frontend compatibility
+    const project = data ? {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      createdAt: data.created_at,
+      createdBy: data.created_by,
+      createdByName: data.created_by_name,
+      createdByRole: data.created_by_role,
+      completionPercentage: data.completion_percentage,
+      updatedAt: data.updated_at,
+      applicationType: data.application_type
+    } : null
+    
+    return { project }
   },
 
   getAll: async () => {
@@ -166,7 +225,22 @@ export const projectAPI = {
       .order('created_at', { ascending: false })
 
     if (error) throw error
-    return { projects: data || [] }
+    
+    // Map snake_case to camelCase for frontend compatibility
+    const projects = (data || []).map(project => ({
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      createdAt: project.created_at,
+      createdBy: project.created_by,
+      createdByName: project.created_by_name,
+      createdByRole: project.created_by_role,
+      completionPercentage: project.completion_percentage,
+      updatedAt: project.updated_at,
+      applicationType: project.application_type
+    }))
+    
+    return { projects }
   },
 
   getById: async (projectId: string) => {
@@ -177,7 +251,22 @@ export const projectAPI = {
       .single()
 
     if (error) throw error
-    return { project: data }
+    
+    // Map snake_case to camelCase for frontend compatibility
+    const project = data ? {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      createdAt: data.created_at,
+      createdBy: data.created_by,
+      createdByName: data.created_by_name,
+      createdByRole: data.created_by_role,
+      completionPercentage: data.completion_percentage,
+      updatedAt: data.updated_at,
+      applicationType: data.application_type
+    } : null
+    
+    return { data: project }
   },
 
   update: async (projectId: string, updates: any) => {
@@ -189,7 +278,22 @@ export const projectAPI = {
       .single()
 
     if (error) throw error
-    return { project: data }
+    
+    // Map snake_case to camelCase for frontend compatibility
+    const project = data ? {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      createdAt: data.created_at,
+      createdBy: data.created_by,
+      createdByName: data.created_by_name,
+      createdByRole: data.created_by_role,
+      completionPercentage: data.completion_percentage,
+      updatedAt: data.updated_at,
+      applicationType: data.application_type
+    } : null
+    
+    return { project }
   },
 
   delete: async (projectId: string) => {
@@ -527,6 +631,156 @@ export const promptsAPI = {
 }
 
 // ============================================
+// FEATURES API
+// ============================================
+
+const featuresAPI = {
+  get: async (projectId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token')
+      }
+
+      console.log('🔍 Fetching features from:', `${API_BASE_URL}/api/projects/${projectId}/features`)
+      
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/features`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        console.error('❌ Features API error:', response.status, response.statusText)
+        throw new Error('Failed to fetch features')
+      }
+
+      const data = await response.json()
+      console.log('✅ Features API response:', data)
+      console.log('📊 Number of features received:', data.features?.length || 0)
+      
+      if (data.features && data.features.length > 0) {
+        console.log('📝 Sample feature:', data.features[0])
+      }
+      
+      return { features: data.features || [] }
+    } catch (error) {
+      console.error('Error fetching features:', error)
+      return { features: [] }
+    }
+  },
+
+  save: async (projectId: string, features: any[]) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token')
+      }
+
+      console.log('💾 Saving features to:', `${API_BASE_URL}/api/projects/${projectId}/features`)
+      console.log('📊 Number of features to save:', features.length)
+      if (features.length > 0) {
+        console.log('📝 Sample feature being saved:', features[0])
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/features`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ features })
+      })
+
+      if (!response.ok) {
+        console.error('❌ Features save error:', response.status, response.statusText)
+        throw new Error('Failed to save features')
+      }
+
+      const data = await response.json()
+      console.log('✅ Features saved successfully:', data)
+      return { features: data.features || [] }
+    } catch (error) {
+      console.error('Error saving features:', error)
+      throw error
+    }
+  }
+}
+
+// ============================================
+// VIBE ENGINEER PROMPTS API
+// ============================================
+
+export const vibePromptsAPI = {
+  generate: async (projectId: string, developmentType: DevelopmentType, previousOutputs: string[] = []) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/generate-vibe-prompt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        projectId,
+        developmentType,
+        previousOutputs
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to generate Vibe prompt')
+    }
+
+    const result = await response.json()
+    return result
+  },
+
+  getAll: async (projectId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/vibe-prompts`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to fetch Vibe prompts')
+    }
+
+    const result = await response.json()
+    return result
+  },
+
+  delete: async (promptId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/${promptId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to delete prompt')
+    }
+
+    const result = await response.json()
+    return result
+  }
+}
+
+// ============================================
 // API CLIENT (for apiClient.get/post pattern)
 // ============================================
 
@@ -543,6 +797,8 @@ export const apiClient = {
         return userStoriesAPI.get(projectId)
       case 'modules':
         return modulesAPI.get(projectId)
+      case 'features':
+        return featuresAPI.get(projectId)
       case 'business-rules':
         return businessRulesAPI.get(projectId)
       case 'actions':
@@ -584,8 +840,7 @@ export const apiClient = {
       case 'documents':
         return documentsAPI.save(projectId, data.documents)
       case 'features':
-        // Features are handled similarly
-        return { features: data.features }
+        return featuresAPI.save(projectId, data.features)
       default:
         return { data: null }
     }

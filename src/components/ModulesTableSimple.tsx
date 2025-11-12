@@ -7,6 +7,7 @@ import { Trash2, Plus, Edit2, Check, X } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Badge } from './ui/badge'
 import { ModuleFeature } from './ExcelUtils'
+import AIDynamicEnhancement from './AIDynamicEnhancement'
 
 // Keep old exports for compatibility
 export interface ModuleFeatures {
@@ -19,11 +20,13 @@ export interface ModuleBusinessRules {
 
 interface ModulesTableProps {
   modules: ModuleFeature[]
+  projectId?: string
   onChange: (modules: ModuleFeature[]) => void
 }
 
 export default function ModulesTable({ 
-  modules, 
+  modules,
+  projectId,
   onChange
 }: ModulesTableProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -276,6 +279,24 @@ export default function ModulesTable({
                           >
                             <Edit2 className="h-4 w-4" />
                           </Button>
+                          {projectId && (
+                            <AIDynamicEnhancement
+                              targetType="module"
+                              targetId={module.id}
+                              targetName={module.module_name}
+                              projectId={projectId}
+                              onEnhanced={(enhancedData) => {
+                                // Update the module with enhanced data
+                                const updatedModules = modules.map(m => 
+                                  m.id === module.id 
+                                    ? { ...m, ...enhancedData, id: module.id }
+                                    : m
+                                )
+                                onChange(updatedModules)
+                              }}
+                              className="h-8"
+                            />
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"

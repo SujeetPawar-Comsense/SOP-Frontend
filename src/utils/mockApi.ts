@@ -127,6 +127,12 @@ export const authAPI = {
 // PROJECT API (MOCK)
 // ============================================
 
+export type ApplicationType = 
+  | 'Batch Application' 
+  | 'Web Application' 
+  | 'Website' 
+  | 'Microservices';
+
 export interface Project {
   id: string;
   name: string;
@@ -137,6 +143,7 @@ export interface Project {
   createdByRole: string;
   completionPercentage: number;
   updatedAt: string;
+  applicationType?: ApplicationType;
 }
 
 export const projectAPI = {

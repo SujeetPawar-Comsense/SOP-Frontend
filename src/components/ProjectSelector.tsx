@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, FolderOpen, Calendar, Users, FileText, Loader2, Upload, Sparkles, Trash2, MoreVertical } from 'lucide-react'
+import { Plus, FolderOpen, Calendar, Users, FileText, Loader2, Upload, Sparkles, Trash2, MoreVertical, Edit2 } from 'lucide-react'
 import { toast } from 'sonner@2.0.3'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card'
 import { Button } from './ui/button'
@@ -28,6 +28,12 @@ import BRDUploadModal from './BRDUploadModal'
 import { UserRole } from './RoleSelector'
 import { apiClient } from '../utils/api'
 
+export type ApplicationType = 
+  | 'Batch Application' 
+  | 'Web Application' 
+  | 'Website' 
+  | 'Microservices';
+
 export interface Project {
   id: string
   name: string
@@ -37,6 +43,7 @@ export interface Project {
   createdByName?: string
   createdByRole?: string
   completionPercentage: number
+  applicationType?: ApplicationType
 }
 
 interface ProjectSelectorProps {
@@ -61,6 +68,9 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
   const [isBRDModalOpen, setIsBRDModalOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [projectToRename, setProjectToRename] = useState<Project | null>(null)
+  const [newName, setNewName] = useState('')
+  const [isRenaming, setIsRenaming] = useState(false)
 
   const handleCreateProject = () => {
     if (!newProjectName.trim()) {
@@ -76,6 +86,7 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
 
   const canCreateProject = currentRole === 'project_owner'
   const canDeleteProject = currentRole === 'project_owner'
+  const canRenameProject = currentRole === 'project_owner'
 
   const handleDeleteProject = async () => {
     if (!projectToDelete) return
@@ -93,6 +104,29 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
     } finally {
       setIsDeleting(false)
       setProjectToDelete(null)
+    }
+  }
+
+  const handleRenameProject = async () => {
+    if (!projectToRename || !newName.trim()) return
+
+    setIsRenaming(true)
+    try {
+      const response = await apiClient.put(`/projects/${projectToRename.id}`, {
+        name: newName.trim(),
+        description: projectToRename.description
+      })
+      if (response.success) {
+        toast.success('Project renamed successfully')
+        // Reload the page to refresh the project list
+        window.location.reload()
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to rename project')
+    } finally {
+      setIsRenaming(false)
+      setProjectToRename(null)
+      setNewName('')
     }
   }
 
@@ -640,6 +674,18 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {canRenameProject && (
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setProjectToRename(project)
+                                setNewName(project.name)
+                              }}
+                            >
+                              <Edit2 className="mr-2 h-4 w-4" />
+                              Rename Project
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={(e) => {
@@ -666,7 +712,7 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Users className="w-4 h-4" />
-                      <span>By {project.createdByName || project.createdBy}</span>
+                      <span>{project.createdByName || 'Unknown User'}</span>
                     </div>
                     <div className="mt-4">
                       <div className="flex justify-between text-sm mb-2">
@@ -687,6 +733,62 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
           </div>
         )}
       </div>
+
+      {/* Rename Project Dialog */}
+      <Dialog open={!!projectToRename} onOpenChange={() => {
+        setProjectToRename(null)
+        setNewName('')
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Project</DialogTitle>
+            <DialogDescription>
+              Enter a new name for the project
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="project-name">Project Name</Label>
+              <Input
+                id="project-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Enter new project name"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newName.trim()) {
+                    handleRenameProject()
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setProjectToRename(null)
+                setNewName('')
+              }}
+              disabled={isRenaming}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRenameProject}
+              disabled={!newName.trim() || isRenaming}
+            >
+              {isRenaming ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Renaming...
+                </>
+              ) : (
+                'Rename'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>

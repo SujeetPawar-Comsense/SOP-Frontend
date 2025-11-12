@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
@@ -20,11 +20,13 @@ import { ModuleFeature } from './ExcelUtils'
 import { UserStory } from './UserStoriesEditor'
 import { FeatureTask } from './FeaturesTasksEditor'
 import { cn } from './ui/utils'
+import AIDynamicEnhancement from './AIDynamicEnhancement'
 
 interface UserStoriesAndFeaturesProps {
   modules: ModuleFeature[]
   userStories: UserStory[]
   features: FeatureTask[]
+  projectId?: string
   onUserStoryEdit?: (userStory: UserStory) => void
   onFeatureEdit?: (feature: FeatureTask) => void
   onUserStoryDelete?: (userStoryId: string) => void
@@ -38,6 +40,7 @@ export default function UserStoriesAndFeatures({
   modules,
   userStories,
   features,
+  projectId,
   onUserStoryEdit,
   onFeatureEdit,
   onUserStoryDelete,
@@ -49,6 +52,49 @@ export default function UserStoriesAndFeatures({
   const [expandedUserStories, setExpandedUserStories] = useState<Set<string>>(new Set())
   const [selectedUserStory, setSelectedUserStory] = useState<string | null>(null)
   const [selectedFeature, setSelectedFeature] = useState<string | null>(null)
+
+  // Monitor when features change
+  useEffect(() => {
+    console.log('🔄 Features updated in UserStoriesAndFeatures component')
+    console.log('📊 Total features:', features?.length || 0)
+    if (features && features.length > 0) {
+      console.log('📝 Sample feature:', features[0])
+      console.log('🔗 All feature-story mappings:', features.map(f => ({
+        featureId: f.id,
+        featureTitle: f.title,
+        userStoryId: f.userStoryId,
+        userStoryIdType: typeof f.userStoryId
+      })))
+    }
+    
+    if (userStories && userStories.length > 0) {
+      console.log('📚 User story IDs:', userStories.map(s => ({
+        storyId: s.id,
+        storyIdType: typeof s.id,
+        storyTitle: s.title
+      })))
+    }
+  }, [features, userStories])
+
+  // Debug logging
+  console.log('UserStoriesAndFeatures - Total features received:', features?.length || 0)
+  console.log('UserStoriesAndFeatures - Features:', features)
+  console.log('UserStoriesAndFeatures - User stories:', userStories?.length || 0)
+  console.log('UserStoriesAndFeatures - User story IDs:', userStories?.map(s => s.id))
+  console.log('UserStoriesAndFeatures - Features with userStoryId:', features?.map(f => ({ 
+    id: f.id, 
+    userStoryId: f.userStoryId, 
+    title: f.title 
+  })))
+  
+  // Check for ID type mismatches
+  if (features?.length > 0 && userStories?.length > 0) {
+    const sampleFeature = features[0];
+    const sampleStory = userStories[0];
+    console.log('ID Type Check:');
+    console.log('  Sample Story ID:', sampleStory.id, 'Type:', typeof sampleStory.id);
+    console.log('  Sample Feature userStoryId:', sampleFeature.userStoryId, 'Type:', typeof sampleFeature.userStoryId);
+  }
 
   const toggleUserStory = (userStoryId: string) => {
     const newExpanded = new Set(expandedUserStories)
@@ -86,7 +132,11 @@ export default function UserStoriesAndFeatures({
   }
 
   const getUserStoryStats = (userStoryId: string) => {
-    const storyFeatures = features.filter(f => f.userStoryId === userStoryId)
+    const storyFeatures = features.filter(f => 
+      f.userStoryId === userStoryId || 
+      (f as any).user_story_id === userStoryId || // Check snake_case version too
+      String(f.userStoryId) === String(userStoryId) // Ensure string comparison
+    )
     const completedFeatures = storyFeatures.filter(f => f.status === 'Completed').length
     
     return {
@@ -144,7 +194,20 @@ export default function UserStoriesAndFeatures({
                 {/* User stories for this module */}
                 {moduleStories.map((userStory) => {
                   const isStoryExpanded = expandedUserStories.has(userStory.id)
-                  const storyFeatures = features.filter(f => f.userStoryId === userStory.id)
+                  const storyFeatures = features.filter(f => {
+                    const match = f.userStoryId === userStory.id || 
+                                  (f as any).user_story_id === userStory.id || // Check snake_case version too
+                                  String(f.userStoryId) === String(userStory.id) // Ensure string comparison
+                    if (match) {
+                      console.log(`✅ Feature ${f.id} matches story ${userStory.id}`)
+                    }
+                    return match
+                  })
+                  console.log(`Features for story ${userStory.id}:`, storyFeatures.length, storyFeatures)
+                  if (storyFeatures.length === 0 && features.length > 0) {
+                    console.log(`⚠️ No features found for story ${userStory.id}, but ${features.length} total features exist`)
+                    console.log('Sample feature:', features[0])
+                  }
                   const storyStats = getUserStoryStats(userStory.id)
                   const isStorySelected = selectedUserStory === userStory.id
 
@@ -228,6 +291,24 @@ export default function UserStoriesAndFeatures({
                                   >
                                     <Edit2 className="w-4 h-4" />
                                   </Button>
+                                  {projectId && (
+                                    <AIDynamicEnhancement
+                                      targetType="userStory"
+                                      targetId={userStory.id}
+                                      targetName={userStory.title}
+                                      projectId={projectId}
+                                      onEnhanced={(enhancedData) => {
+                                        // Update the user story with enhanced data
+                                        const updatedStory = {
+                                          ...userStory,
+                                          ...enhancedData,
+                                          id: userStory.id // Preserve the ID
+                                        }
+                                        onUserStoryEdit?.(updatedStory)
+                                      }}
+                                      className="h-8"
+                                    />
+                                  )}
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -306,6 +387,24 @@ export default function UserStoriesAndFeatures({
                                               >
                                                 <Edit2 className="w-3 h-3" />
                                               </Button>
+                                              {projectId && (
+                                                <AIDynamicEnhancement
+                                                  targetType="feature"
+                                                  targetId={feature.id}
+                                                  targetName={feature.title}
+                                                  projectId={projectId}
+                                                  onEnhanced={(enhancedData) => {
+                                                    // Update the feature with enhanced data
+                                                    const updatedFeature = {
+                                                      ...feature,
+                                                      ...enhancedData,
+                                                      id: feature.id // Preserve the ID
+                                                    }
+                                                    onFeatureEdit?.(updatedFeature)
+                                                  }}
+                                                  className="h-7"
+                                                />
+                                              )}
                                               <Button
                                                 variant="ghost"
                                                 size="icon"

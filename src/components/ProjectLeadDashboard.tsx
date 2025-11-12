@@ -17,6 +17,7 @@ import { ActionsInteractionsConfig, createDefaultActionsInteractionsConfig } fro
 import { apiClient } from '../utils/api'
 import { UserRole } from './RoleSelector'
 import AIGenerationModal from './AIGenerationModal'
+import { supabase } from '../utils/supabaseClient'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,6 +69,11 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   useEffect(() => {
     loadProjectData()
   }, [projectId])
+  
+  // Auto-unlock sections if data exists
+  useEffect(() => {
+    checkAndUnlockSections()
+  }, [modules, userStories, features, businessRules])
   
   // Get project name
   useEffect(() => {
@@ -133,6 +139,52 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     }
   }
   
+  const checkAndUnlockSections = () => {
+    const newUnlockedSections = new Set(['projectInfo']) // Always unlock project info
+    
+    // Check if we have modules data
+    if (modules && modules.length > 0) {
+      newUnlockedSections.add('modules')
+      console.log('Modules data exists, unlocking modules section')
+    }
+    
+    // Check if we have user stories
+    if (userStories && userStories.length > 0) {
+      newUnlockedSections.add('userStoriesFeatures')
+      console.log('User stories exist, unlocking user stories section')
+    }
+    
+    // Check if we have features
+    if (features && features.length > 0) {
+      newUnlockedSections.add('userStoriesFeatures')
+      console.log('Features exist, unlocking features section')
+    }
+    
+    // Check if we have business rules
+    if (businessRules && businessRules.categories && businessRules.categories.length > 0) {
+      // Check if any category has rules defined
+      const hasRules = businessRules.categories.some(cat => 
+        (cat.subcategories?.some(sub => sub.userRule) || 
+         cat.customSubcategories?.some(sub => sub.userRule))
+      )
+      if (hasRules) {
+        newUnlockedSections.add('businessRules')
+        console.log('Business rules exist, unlocking business rules section')
+      }
+    }
+    
+    // Check if we have actions/interactions
+    if (actionsInteractions && Object.keys(actionsInteractions.selectedActions || {}).length > 0) {
+      newUnlockedSections.add('actions')
+      console.log('Actions exist, unlocking actions section')
+    }
+    
+    // Update unlocked sections if there are changes
+    if (newUnlockedSections.size > unlockedSections.size) {
+      setUnlockedSections(newUnlockedSections)
+    }
+  }
+  
   const analyzeBRDOverview = async (brdContent: string) => {
     setIsAnalyzingBRD(true)
     setBrdAnalysisProgress('Analyzing your Business Requirements Document...')
@@ -173,28 +225,85 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     // Save current data
     await saveProjectInformation(projectInformation)
     
-    // If this is a BRD project and we're moving from projectInfo to modules
-    if (isFromBRD && activeSection === 'projectInfo') {
-      // Get BRD content for generation
+    // Parse project details using BRD_PARSER_SYSTEM_PROMPT
+    if (activeSection === 'projectInfo') {
       try {
-        const response = await apiClient.get(`/projects/${projectId}`)
-        if (response.project?.brd_content) {
-          setBrdContentForGeneration(response.project.brd_content)
-          // Show AI generation modal
-          setShowAIGenerationModal(true)
-        } else {
-          // No BRD content, just unlock next section normally
-          unlockNextSection()
+        setIsAnalyzingBRD(true)
+        setBrdAnalysisProgress('Analyzing project information...')
+        
+        // Lock all sections except projectInfo during analysis
+        setUnlockedSections(new Set(['projectInfo']))
+        
+        // Prepare project overview for parsing
+        const projectOverview = {
+          projectName: projectName,
+          projectDescription: '', // Add if available
+          businessIntent: {
+            vision: projectInformation.vision,
+            purpose: projectInformation.purpose,
+            objectives: projectInformation.objectives?.split('\n').filter(Boolean) || [],
+            projectScope: {
+              inScope: projectInformation.projectScope?.split('\n').filter(line => line.startsWith('In:')).map(line => line.substring(3).trim()) || [],
+              outOfScope: projectInformation.projectScope?.split('\n').filter(line => line.startsWith('Out:')).map(line => line.substring(4).trim()) || []
+            }
+          },
+          requirements: {
+            functional: projectInformation.functionalRequirements?.split('\n').filter(Boolean) || [],
+            nonFunctional: projectInformation.nonFunctionalRequirements?.split('\n').filter(Boolean) || [],
+            integration: projectInformation.integrationRequirements?.split('\n').filter(Boolean) || [],
+            reporting: projectInformation.reportingRequirements?.split('\n').filter(Boolean) || []
+          },
+          ApplicationType: 'Web Application' // Get from project if available
         }
-      } catch (error) {
-        console.error('Failed to get BRD content:', error)
-        unlockNextSection()
+        
+        setBrdAnalysisProgress('Generating modules and user stories...')
+        
+        // Call the parse-project-details API
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/brd/parse-project-details`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          },
+          body: JSON.stringify({
+            projectId,
+            projectOverview
+          })
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to parse project details')
+        }
+        
+        const result = await response.json()
+        
+        if (result.success && result.data) {
+          setBrdAnalysisProgress('Loading generated content...')
+          
+          // Reload all data to get the parsed content
+          await loadProjectData()
+          
+          // Unlock all sections after successful parsing
+          setUnlockedSections(new Set(['projectInfo', 'modules', 'userStoriesFeatures', 'businessRules', 'actions']))
+          
+          toast.success('Project details generated successfully!')
+          
+          // Move to modules section
+          setActiveSection('modules')
+        }
+      } catch (error: any) {
+        console.error('Failed to parse project details:', error)
+        toast.error('Failed to generate project details')
+        // Unlock sections on error
+        setUnlockedSections(new Set(['projectInfo', 'modules', 'userStoriesFeatures', 'businessRules', 'actions']))
+      } finally {
+        setIsAnalyzingBRD(false)
+        setBrdAnalysisProgress('')
       }
     } else {
       unlockNextSection()
+      toast.success('Progress saved!')
     }
-    
-    toast.success('Progress saved!')
   }
   
   const unlockNextSection = () => {
@@ -210,8 +319,19 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   
   const handleAIGenerationComplete = async (generatedData: any) => {
     console.log('AI Generation complete:', generatedData)
+    console.log('Generated modules:', generatedData?.modules?.length)
+    console.log('Generated user stories:', generatedData?.modules?.reduce((acc: number, m: any) => acc + (m.userStories?.length || 0), 0))
+    console.log('Generated features:', generatedData?.modules?.reduce((acc: number, m: any) => 
+      acc + m.userStories?.reduce((storyAcc: number, s: any) => storyAcc + (s.features?.length || 0), 0), 0))
+    
+    // Close the modal first
+    setShowAIGenerationModal(false)
+    
+    // Wait a bit for database writes to complete
+    await new Promise(resolve => setTimeout(resolve, 2000))
     
     // Reload all data to get the newly generated content
+    console.log('Reloading project data...')
     await loadProjectData()
     
     // Unlock all sections since we have generated everything
@@ -219,9 +339,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     
     // Move to modules section
     setActiveSection('modules')
-    
-    // Close the modal
-    setShowAIGenerationModal(false)
     
     toast.success('AI has generated your project structure!')
   }
@@ -268,9 +385,21 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       }
 
       // Load features/tasks
+      console.log('Loading features for project:', projectId)
       const featuresResponse = await apiClient.get(`/projects/${projectId}/features`)
+      console.log('Features response:', featuresResponse)
       if (featuresResponse.features) {
         setFeatures(featuresResponse.features)
+        console.log('Features set:', featuresResponse.features)
+        console.log('Number of features loaded:', featuresResponse.features.length)
+        console.log('Features with userStoryId:', featuresResponse.features.map((f: any) => ({ 
+          id: f.id, 
+          userStoryId: f.userStoryId, 
+          title: f.title 
+        })))
+      } else {
+        console.log('No features in response')
+        setFeatures([])
       }
 
       // Load business rules
@@ -382,10 +511,26 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   const saveFeatures = async (featuresList: FeatureTask[]) => {
     setSaving(true)
     try {
-      await apiClient.post(`/projects/${projectId}/features`, { features: featuresList })
+      console.log('Saving features:', featuresList)
+      console.log('Features with userStoryId:', featuresList.map(f => ({ id: f.id, userStoryId: f.userStoryId, title: f.title })))
+      
+      // Verify user stories exist before saving features
+      const userStoryIdsInFeatures = [...new Set(featuresList.map(f => f.userStoryId).filter(Boolean))];
+      const existingUserStoryIds = userStories.map(s => s.id);
+      console.log('User story IDs in features:', userStoryIdsInFeatures);
+      console.log('Existing user story IDs:', existingUserStoryIds);
+      
+      const missingStoryIds = userStoryIdsInFeatures.filter(id => !existingUserStoryIds.includes(id));
+      if (missingStoryIds.length > 0) {
+        console.warn('⚠️ Features reference non-existent user stories:', missingStoryIds);
+      }
+      
+      const response = await apiClient.post(`/projects/${projectId}/features`, { features: featuresList })
+      console.log('Features save response:', response)
       setFeatures(featuresList)
       toast.success('Features/Tasks saved')
     } catch (error: any) {
+      console.error('Error saving features:', error)
       toast.error('Failed to save features/tasks')
     } finally {
       setSaving(false)
@@ -658,7 +803,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             onChange={saveProjectInformation}
             isAnalyzing={isAnalyzingBRD}
             analysisProgress={brdAnalysisProgress}
-            onSaveAndContinue={isFromBRD ? handleSaveAndContinue : undefined}
+            onSaveAndContinue={handleSaveAndContinue}
             isLocked={false}
             isProjectOverviewComplete={Boolean(
               projectInformation.vision &&
@@ -671,6 +816,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         {activeSection === 'modules' && (
           <ModulesTable
             modules={modules}
+            projectId={projectId}
             onChange={saveModules}
           />
         )}
@@ -680,6 +826,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             modules={modules}
             userStories={userStories}
             features={features}
+            projectId={projectId}
             onUserStoryEdit={(story) => {
               // Create a copy of the story and update it
               const updatedStories = userStories.map(s => 
@@ -705,7 +852,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             onAddUserStory={(moduleId) => {
               // Create a new user story for the module
               const newStory: UserStory = {
-                id: `story-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                id: crypto.randomUUID(),
                 title: 'New User Story',
                 userRole: 'User',
                 description: '',
@@ -722,17 +869,16 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
               const userStory = userStories.find(s => s.id === userStoryId)
               if (userStory) {
                 const newFeature: FeatureTask = {
-                  id: `feature-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  id: crypto.randomUUID(),
                   title: 'New Feature',
                   description: '',
                   userStoryId: userStoryId,
                   moduleId: userStory.moduleId,
-                  technicalDetails: '',
-                  dependencies: [],
                   estimatedHours: 0,
                   priority: 'Medium',
                   status: 'Not Started'
                 }
+                console.log('Creating new feature:', newFeature)
                 saveFeatures([...features, newFeature])
               }
             }}
