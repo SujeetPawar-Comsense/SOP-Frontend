@@ -21,6 +21,7 @@ import { UserStory } from './UserStoriesEditor'
 import { FeatureTask } from './FeaturesTasksEditor'
 import { cn } from './ui/utils'
 import AIDynamicEnhancement from './AIDynamicEnhancement'
+import FeatureManagementCard from './FeatureManagementCard'
 
 interface UserStoriesAndFeaturesProps {
   modules: ModuleFeature[]
@@ -331,101 +332,29 @@ export default function UserStoriesAndFeatures({
                       {/* Features */}
                       <Collapsible open={isStoryExpanded}>
                         <CollapsibleContent>
-                          <div className="pl-12 bg-accent/10 border-t border-border/30">
-                            {storyFeatures.length === 0 ? (
-                              <div className="py-4 px-4 text-sm text-muted-foreground">
-                                No features in this user story
-                              </div>
-                            ) : (
-                              storyFeatures.map((feature) => {
-                                const isFeatureSelected = selectedFeature === feature.id
-                                
-                                return (
-                                  <div
-                                    key={feature.id}
-                                    className={cn(
-                                      "p-4 border-b border-border/20 last:border-b-0 cursor-pointer transition-colors hover:bg-accent/20",
-                                      isFeatureSelected && "bg-accent/15 border-l-4 border-l-green-400"
-                                    )}
-                                    onClick={() => setSelectedFeature(feature.id)}
-                                  >
-                                    <div className="flex items-start gap-3">
-                                      <Layers className="w-4 h-4 text-green-400 mt-0.5" />
-                                      
-                                      <div className="flex-1">
-                                        <div className="flex items-start justify-between">
-                                          <div className="flex-1">
-                                            <h5 className="font-medium text-sm flex items-center gap-2">
-                                              {feature.title}
-                                              <Badge variant={getPriorityColor(feature.priority)} className="text-xs scale-90">
-                                                {feature.priority}
-                                              </Badge>
-                                              {getStatusIcon(feature.status)}
-                                            </h5>
-                                            <p className="text-sm text-muted-foreground mt-1">
-                                              {feature.description}
-                                            </p>
-                                            {feature.estimatedHours && (
-                                              <div className="text-xs text-muted-foreground mt-2">
-                                                Est. {feature.estimatedHours}h
-                                                {feature.assignee && ` • Assigned to: ${feature.assignee}`}
-                                              </div>
-                                            )}
-                                          </div>
-                                          
-                                          {!readOnly && (
-                                            <div className="flex gap-1">
-                                              <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-7 w-7"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  onFeatureEdit?.(feature)
-                                                }}
-                                                title="Edit Feature"
-                                              >
-                                                <Edit2 className="w-3 h-3" />
-                                              </Button>
-                                              {projectId && (
-                                                <AIDynamicEnhancement
-                                                  targetType="feature"
-                                                  targetId={feature.id}
-                                                  targetName={feature.title}
-                                                  projectId={projectId}
-                                                  onEnhanced={(enhancedData) => {
-                                                    // Update the feature with enhanced data
-                                                    const updatedFeature = {
-                                                      ...feature,
-                                                      ...enhancedData,
-                                                      id: feature.id // Preserve the ID
-                                                    }
-                                                    onFeatureEdit?.(updatedFeature)
-                                                  }}
-                                                  className="h-7"
-                                                />
-                                              )}
-                                              <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-7 w-7 text-destructive"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  onFeatureDelete?.(feature.id)
-                                                }}
-                                                title="Delete Feature"
-                                              >
-                                                <Trash2 className="w-3 h-3" />
-                                              </Button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )
-                              })
-                            )}
+                          <div className="p-4 border-t border-border/30">
+                            <FeatureManagementCard
+                              userStoryTitle={userStory.title}
+                              userStoryId={userStory.id}
+                              features={storyFeatures}
+                              projectId={projectId}
+                              onFeatureAdd={(newFeature) => {
+                                // Create a complete feature object
+                                const feature: FeatureTask = {
+                                  id: crypto.randomUUID(),
+                                  ...newFeature as FeatureTask,
+                                  userStoryId: userStory.id
+                                }
+                                onFeatureEdit?.(feature)
+                              }}
+                              onFeatureEdit={onFeatureEdit}
+                              onFeatureDelete={onFeatureDelete}
+                              onAIMagic={() => {
+                                // Handle AI Magic for features
+                                console.log('AI Magic for features of story:', userStory.id)
+                              }}
+                              readOnly={readOnly}
+                            />
                           </div>
                         </CollapsibleContent>
                       </Collapsible>
