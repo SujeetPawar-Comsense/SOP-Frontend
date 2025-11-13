@@ -70,10 +70,10 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     loadProjectData()
   }, [projectId])
   
-  // Auto-unlock sections if data exists
+  // Auto-unlock sections if data exists (only for non-BRD projects)
   useEffect(() => {
     checkAndUnlockSections()
-  }, [modules, userStories, features, businessRules])
+  }, [modules, userStories, features, businessRules, isFromBRD])
   
   // Get project name
   useEffect(() => {
@@ -140,27 +140,27 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   }
   
   const checkAndUnlockSections = () => {
-    const newUnlockedSections = new Set(['projectInfo']) // Always unlock project info
+    // Always start with project info unlocked
+    const newUnlockedSections = new Set(['projectInfo'])
     
-    // Check if we have modules data
+    // Check if we have modules data - unlock if exists
     if (modules && modules.length > 0) {
       newUnlockedSections.add('modules')
       console.log('Modules data exists, unlocking modules section')
+      
+      // If modules exist, also check for user stories and features
+      if (userStories && userStories.length > 0) {
+        newUnlockedSections.add('userStoriesFeatures')
+        console.log('User stories exist, unlocking user stories section')
+      }
+      
+      if (features && features.length > 0) {
+        newUnlockedSections.add('userStoriesFeatures')
+        console.log('Features exist, unlocking features section')
+      }
     }
     
-    // Check if we have user stories
-    if (userStories && userStories.length > 0) {
-      newUnlockedSections.add('userStoriesFeatures')
-      console.log('User stories exist, unlocking user stories section')
-    }
-    
-    // Check if we have features
-    if (features && features.length > 0) {
-      newUnlockedSections.add('userStoriesFeatures')
-      console.log('Features exist, unlocking features section')
-    }
-    
-    // Check if we have business rules
+    // Check if we have business rules - only unlock if data exists
     if (businessRules && businessRules.categories && businessRules.categories.length > 0) {
       // Check if any category has rules defined
       const hasRules = businessRules.categories.some(cat => 
@@ -173,16 +173,19 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       }
     }
     
-    // Check if we have actions/interactions
+    // Check if we have actions/interactions - only unlock if data exists
     if (actionsInteractions && Object.keys(actionsInteractions.selectedActions || {}).length > 0) {
       newUnlockedSections.add('actions')
       console.log('Actions exist, unlocking actions section')
     }
     
-    // Update unlocked sections if there are changes
-    if (newUnlockedSections.size > unlockedSections.size) {
-      setUnlockedSections(newUnlockedSections)
+    // For BRD projects with no data yet, keep sections locked
+    if (isFromBRD && newUnlockedSections.size === 1) {
+      console.log('BRD project with no generated data yet - keeping sections locked')
     }
+    
+    // Update unlocked sections
+    setUnlockedSections(newUnlockedSections)
   }
   
   const analyzeBRDOverview = async (brdContent: string) => {
@@ -222,85 +225,27 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   }
   
   const handleSaveAndContinue = async () => {
-    // Save current data
+    // Save current data first
     await saveProjectInformation(projectInformation)
     
-    // Parse project details using BRD_PARSER_SYSTEM_PROMPT
+    // If we're on the project info section and don't have generated data yet
     if (activeSection === 'projectInfo') {
-      try {
-        setIsAnalyzingBRD(true)
-        setBrdAnalysisProgress('Analyzing project information...')
-        
-        // Lock all sections except projectInfo during analysis
+      // Check if we already have generated modules/features
+      const hasGeneratedData = modules.length > 0 || userStories.length > 0 || features.length > 0
+      
+      if (!hasGeneratedData) {
+        // No data yet, show AI generation modal
+        console.log('No generated data found, showing AI generation modal')
         setUnlockedSections(new Set(['projectInfo']))
-        
-        // Prepare project overview for parsing
-        const projectOverview = {
-          projectName: projectName,
-          projectDescription: '', // Add if available
-          businessIntent: {
-            vision: projectInformation.vision,
-            purpose: projectInformation.purpose,
-            objectives: projectInformation.objectives?.split('\n').filter(Boolean) || [],
-            projectScope: {
-              inScope: projectInformation.projectScope?.split('\n').filter(line => line.startsWith('In:')).map(line => line.substring(3).trim()) || [],
-              outOfScope: projectInformation.projectScope?.split('\n').filter(line => line.startsWith('Out:')).map(line => line.substring(4).trim()) || []
-            }
-          },
-          requirements: {
-            functional: projectInformation.functionalRequirements?.split('\n').filter(Boolean) || [],
-            nonFunctional: projectInformation.nonFunctionalRequirements?.split('\n').filter(Boolean) || [],
-            integration: projectInformation.integrationRequirements?.split('\n').filter(Boolean) || [],
-            reporting: projectInformation.reportingRequirements?.split('\n').filter(Boolean) || []
-          },
-          ApplicationType: 'Web Application' // Get from project if available
-        }
-        
-        setBrdAnalysisProgress('Generating modules and user stories...')
-        
-        // Call the parse-project-details API
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/brd/parse-project-details`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
-          },
-          body: JSON.stringify({
-            projectId,
-            projectOverview
-          })
-        })
-        
-        if (!response.ok) {
-          throw new Error('Failed to parse project details')
-        }
-        
-        const result = await response.json()
-        
-        if (result.success && result.data) {
-          setBrdAnalysisProgress('Loading generated content...')
-          
-          // Reload all data to get the parsed content
-          await loadProjectData()
-          
-          // Unlock all sections after successful parsing
-          setUnlockedSections(new Set(['projectInfo', 'modules', 'userStoriesFeatures', 'businessRules', 'actions']))
-          
-          toast.success('Project details generated successfully!')
-          
-          // Move to modules section
-          setActiveSection('modules')
-        }
-      } catch (error: any) {
-        console.error('Failed to parse project details:', error)
-        toast.error('Failed to generate project details')
-        // Unlock sections on error
-        setUnlockedSections(new Set(['projectInfo', 'modules', 'userStoriesFeatures', 'businessRules', 'actions']))
-      } finally {
-        setIsAnalyzingBRD(false)
-        setBrdAnalysisProgress('')
+        setShowAIGenerationModal(true)
+      } else {
+        // Data already exists, just move to next section
+        console.log('Generated data already exists, moving to next section')
+        unlockNextSection()
+        toast.success('Moving to next section!')
       }
     } else {
+      // For other sections, just save and continue to next
       unlockNextSection()
       toast.success('Progress saved!')
     }
@@ -334,13 +279,27 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     console.log('Reloading project data...')
     await loadProjectData()
     
-    // Unlock all sections since we have generated everything
-    setUnlockedSections(new Set(['projectInfo', 'modules', 'userStoriesFeatures', 'businessRules', 'actions']))
+    // Unlock sections based on what was generated
+    const sectionsToUnlock = new Set(['projectInfo'])
+    
+    // Always unlock modules if generation was successful
+    if (generatedData?.modules?.length > 0) {
+      sectionsToUnlock.add('modules')
+      sectionsToUnlock.add('userStoriesFeatures') // Also unlock user stories/features since they're generated together
+    }
+    
+    // Check if business rules were generated
+    if (generatedData?.businessRules) {
+      sectionsToUnlock.add('businessRules')
+    }
+    
+    // Update unlocked sections
+    setUnlockedSections(sectionsToUnlock)
     
     // Move to modules section
     setActiveSection('modules')
     
-    toast.success('AI has generated your project structure!')
+    toast.success('AI has generated your project structure! All generated sections are now available.')
   }
   
   // Convert project information to the format expected by the API
@@ -942,7 +901,11 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       {/* AI Generation Modal */}
       <AIGenerationModal
         open={showAIGenerationModal}
-        onClose={() => setShowAIGenerationModal(false)}
+        onClose={() => {
+          setShowAIGenerationModal(false)
+          // If user cancels, check what data already exists and unlock accordingly
+          checkAndUnlockSections()
+        }}
         onComplete={handleAIGenerationComplete}
         projectId={projectId}
         projectOverview={getProjectOverviewForAPI()}

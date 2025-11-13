@@ -7,7 +7,7 @@ import { Trash2, Plus, Edit2, Check, X } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Badge } from './ui/badge'
 import { ModuleFeature } from './ExcelUtils'
-import AIDynamicEnhancement from './AIDynamicEnhancement'
+import AIGeneralEnhancement from './AIGeneralEnhancement'
 
 // Keep old exports for compatibility
 export interface ModuleFeatures {
@@ -111,13 +111,20 @@ export default function ModulesTable({
           <p className="text-sm text-muted-foreground mb-6">
             Modules represent the major functional areas of your application. Start by adding your first module.
           </p>
-          <Button
-            onClick={handleAddModule}
-            className="gap-2 bg-primary hover:bg-primary/90"
-          >
-            <Plus className="w-4 h-4" />
-            Add First Module
-          </Button>
+          <div className="flex gap-2 justify-center">
+            <AIGeneralEnhancement
+              modules={modules}
+              projectId={projectId}
+              onEnhanced={onChange}
+            />
+            <Button
+              onClick={handleAddModule}
+              className="gap-2 bg-primary hover:bg-primary/90"
+            >
+              <Plus className="w-4 h-4" />
+              Add First Module
+            </Button>
+          </div>
         </div>
       </div>
     )
@@ -132,14 +139,21 @@ export default function ModulesTable({
             Define the major functional areas of your application
           </p>
         </div>
-        <Button
-          onClick={handleAddModule}
-          className="gap-2 bg-primary hover:bg-primary/90"
-          disabled={editingId !== null}
-        >
-          <Plus className="w-4 h-4" />
-          Add Module
-        </Button>
+        <div className="flex gap-2">
+          <AIGeneralEnhancement
+            modules={modules}
+            projectId={projectId}
+            onEnhanced={onChange}
+          />
+          <Button
+            onClick={handleAddModule}
+            className="gap-2 bg-primary hover:bg-primary/90"
+            disabled={editingId !== null}
+          >
+            <Plus className="w-4 h-4" />
+            Add Module
+          </Button>
+        </div>
       </div>
 
       <div className="border border-primary/20 rounded-lg overflow-hidden bg-background/50">
@@ -279,24 +293,6 @@ export default function ModulesTable({
                           >
                             <Edit2 className="h-4 w-4" />
                           </Button>
-                          {projectId && (
-                            <AIDynamicEnhancement
-                              targetType="module"
-                              targetId={module.id}
-                              targetName={module.module_name}
-                              projectId={projectId}
-                              onEnhanced={(enhancedData) => {
-                                // Update the module with enhanced data
-                                const updatedModules = modules.map(m => 
-                                  m.id === module.id 
-                                    ? { ...m, ...enhancedData, id: module.id }
-                                    : m
-                                )
-                                onChange(updatedModules)
-                              }}
-                              className="h-8"
-                            />
-                          )}
                           <Button
                             variant="ghost"
                             size="sm"
