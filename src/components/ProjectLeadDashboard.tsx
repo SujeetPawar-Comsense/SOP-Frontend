@@ -167,7 +167,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         // 3. User Stories & Features must have data to unlock Business Rules
         const storiesFeaturesCompletion = calculateStoriesAndFeaturesCompletion()
         if (storiesFeaturesCompletion.total > 0 && (userStories.length > 0 || features.length > 0)) {
-          newUnlockedSections.add('businessRules')
+        newUnlockedSections.add('businessRules')
           console.log('User Stories & Features data exists, unlocking Business Rules section')
           
           // 4. Business Rules must have data to unlock Actions & Interactions (original logic)
@@ -181,9 +181,9 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         // 5. Actions & Interactions unlock when BOTH modules AND userStoriesFeatures are unlocked
         //    (regardless of businessRules status)
         if (newUnlockedSections.has('modules') && newUnlockedSections.has('userStoriesFeatures')) {
-          newUnlockedSections.add('actions')
+      newUnlockedSections.add('actions')
           console.log('Modules and User Stories & Features unlocked, unlocking Actions & Interactions section')
-        }
+    }
       }
     }
     

@@ -694,7 +694,7 @@ export const promptsAPI = {
 // FEATURES API
 // ============================================
 
-const featuresAPI = {
+export const featuresAPI = {
   get: async (projectId: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
