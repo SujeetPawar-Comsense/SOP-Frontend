@@ -384,10 +384,17 @@ export default function ProjectSelector({ projects, onProjectSelect, onProjectCr
   }
 
   if (showProjectDocumentCreator) {
-    const projectName = selectedProjectForDocument 
-      ? projects.find(p => p.id === selectedProjectForDocument)?.name 
+    const selectedProject = selectedProjectForDocument 
+      ? projects.find(p => p.id === selectedProjectForDocument)
       : undefined
-    return <ProjectDocumentCreator onBack={handleBackFromDocument} projectName={projectName} userRole={currentRole} />
+    return (
+      <ProjectDocumentCreator 
+        onBack={handleBackFromDocument} 
+        projectName={selectedProject?.name} 
+        projectId={selectedProject?.id}
+        userRole={currentRole} 
+      />
+    )
   }
 
   return (
