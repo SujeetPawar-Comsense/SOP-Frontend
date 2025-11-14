@@ -10,9 +10,10 @@ import { useAuth } from './AuthProvider';
 interface LoginFormProps {
   onSwitchToSignup: () => void;
   onNeedVerification: () => void;
+  onForgotPassword: () => void;
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onNeedVerification }) => {
+export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onNeedVerification, onForgotPassword }) => {
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -102,7 +103,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onNeedVe
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password" className="text-gray-300">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className="text-gray-300">Password</Label>
+              <button
+                type="button"
+                onClick={onForgotPassword}
+                className="text-xs text-green-400 hover:text-green-300 underline"
+              >
+                Forgot password?
+              </button>
+            </div>
             <Input
               id="password"
               type="password"

@@ -5,6 +5,25 @@
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>AI - Project Development SOP Understanding</title>
+      <script>
+        // Immediately check for recovery token before React loads
+        (function() {
+          const hash = window.location.hash;
+          const search = window.location.search;
+          console.log('🔍 Initial page load - Hash:', hash, 'Search:', search);
+          
+          // Check if this is a password reset flow
+          const isRecoveryFlow = 
+            (hash && hash.includes('access_token') && hash.includes('type=recovery')) ||
+            (search.includes('type=recovery') && search.includes('access_token'));
+          
+          if (isRecoveryFlow) {
+            console.log('✅ Recovery token detected on initial page load');
+            // Store flag in sessionStorage so React components can detect it
+            sessionStorage.setItem('password_reset_flow', 'true');
+          }
+        })();
+      </script>
     </head>
 
     <body>
