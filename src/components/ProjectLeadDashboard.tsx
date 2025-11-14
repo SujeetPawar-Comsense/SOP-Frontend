@@ -51,6 +51,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   const [isAnalyzingBRD, setIsAnalyzingBRD] = useState(false)
   const [brdAnalysisProgress, setBrdAnalysisProgress] = useState('')
   const [unlockedSections, setUnlockedSections] = useState<Set<string>>(new Set(['projectInfo']))
+  const [hasClickedSaveAndContinue, setHasClickedSaveAndContinue] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [projectName, setProjectName] = useState('')
@@ -70,10 +71,18 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     loadProjectData()
   }, [projectId])
   
-  // Auto-unlock sections if data exists (only for non-BRD projects)
+  // Auto-unlock sections based on completion status
   useEffect(() => {
     checkAndUnlockSections()
-  }, [modules, userStories, features, businessRules, isFromBRD])
+  }, [projectInformation, modules, userStories, features, businessRules, actionsInteractions, hasClickedSaveAndContinue])
+  
+  // Prevent activeSection from being set to a locked section
+  useEffect(() => {
+    if (activeSection && !unlockedSections.has(activeSection)) {
+      // If current active section becomes locked, switch back to projectInfo
+      setActiveSection('projectInfo')
+    }
+  }, [unlockedSections, activeSection])
   
   // Get project name
   useEffect(() => {
@@ -143,45 +152,32 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     // Always start with project info unlocked
     const newUnlockedSections = new Set(['projectInfo'])
     
-    // Check if we have modules data - unlock if exists
-    if (modules && modules.length > 0) {
+    // Sequential unlocking based on completion:
+    // 1. Modules unlock ONLY when "Save and Continue" is clicked (hasClickedSaveAndContinue)
+    //    OR if modules data already exists (for existing projects)
+    if (hasClickedSaveAndContinue || (modules && modules.length > 0)) {
       newUnlockedSections.add('modules')
-      console.log('Modules data exists, unlocking modules section')
+      console.log('Modules section unlocked (Save and Continue clicked or data exists)')
       
-      // If modules exist, also check for user stories and features
-      if (userStories && userStories.length > 0) {
+      // 2. Modules must have data to unlock User Stories & Features
+      if (modules && modules.length > 0) {
         newUnlockedSections.add('userStoriesFeatures')
-        console.log('User stories exist, unlocking user stories section')
+        console.log('Modules data exists, unlocking User Stories & Features section')
+        
+        // 3. User Stories & Features must have data to unlock Business Rules
+        const storiesFeaturesCompletion = calculateStoriesAndFeaturesCompletion()
+        if (storiesFeaturesCompletion.total > 0 && (userStories.length > 0 || features.length > 0)) {
+          newUnlockedSections.add('businessRules')
+          console.log('User Stories & Features data exists, unlocking Business Rules section')
+          
+          // 4. Business Rules must have data to unlock Actions & Interactions
+          const businessRulesCompletion = calculateBusinessRulesCompletion()
+          if (businessRulesCompletion.total > 0 && businessRulesCompletion.completed > 0) {
+            newUnlockedSections.add('actions')
+            console.log('Business Rules data exists, unlocking Actions & Interactions section')
+          }
+        }
       }
-      
-      if (features && features.length > 0) {
-        newUnlockedSections.add('userStoriesFeatures')
-        console.log('Features exist, unlocking features section')
-      }
-    }
-    
-    // Check if we have business rules - only unlock if data exists
-    if (businessRules && businessRules.categories && businessRules.categories.length > 0) {
-      // Check if any category has rules defined
-      const hasRules = businessRules.categories.some(cat => 
-        (cat.subcategories?.some(sub => sub.userRule) || 
-         cat.customSubcategories?.some(sub => sub.userRule))
-      )
-      if (hasRules) {
-        newUnlockedSections.add('businessRules')
-        console.log('Business rules exist, unlocking business rules section')
-      }
-    }
-    
-    // Check if we have actions/interactions - only unlock if data exists
-    if (actionsInteractions && Object.keys(actionsInteractions.selectedActions || {}).length > 0) {
-      newUnlockedSections.add('actions')
-      console.log('Actions exist, unlocking actions section')
-    }
-    
-    // For BRD projects with no data yet, keep sections locked
-    if (isFromBRD && newUnlockedSections.size === 1) {
-      console.log('BRD project with no generated data yet - keeping sections locked')
     }
     
     // Update unlocked sections
@@ -228,6 +224,9 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     // Save current data first
     await saveProjectInformation(projectInformation)
     
+    // Mark that Save and Continue has been clicked - this unlocks Modules
+    setHasClickedSaveAndContinue(true)
+    
     // If we're on the project info section and don't have generated data yet
     if (activeSection === 'projectInfo') {
       // Check if we already have generated modules/features
@@ -236,7 +235,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       if (!hasGeneratedData) {
         // No data yet, show AI generation modal
         console.log('No generated data found, showing AI generation modal')
-        setUnlockedSections(new Set(['projectInfo']))
+        // Modules will be unlocked by checkAndUnlockSections after hasClickedSaveAndContinue is set
         setShowAIGenerationModal(true)
       } else {
         // Data already exists, just move to next section
@@ -335,6 +334,10 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       const modulesResponse = await apiClient.get(`/projects/${projectId}/modules`)
       if (modulesResponse.modules) {
         setModules(modulesResponse.modules)
+        // If modules already exist, mark that Save and Continue was clicked (for existing projects)
+        if (modulesResponse.modules.length > 0) {
+          setHasClickedSaveAndContinue(true)
+        }
       }
 
       // Load user stories
@@ -706,7 +709,8 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             const { completed, total } = section.getCompletion()
             const isComplete = completed === total && total > 0
             const isActive = activeSection === section.id
-            const isLocked = isFromBRD && !unlockedSections.has(section.id)
+            // Lock sections that are not unlocked (applies to all projects, not just BRD)
+            const isLocked = !unlockedSections.has(section.id)
             const progress = total > 0 ? (completed / total) * 100 : 0
 
             return (
@@ -719,7 +723,23 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
                   isComplete && !isActive && "border-green-500/50",
                   isLocked && "opacity-50 cursor-not-allowed"
                 )}
-                onClick={() => !isLocked && setActiveSection(section.id)}
+                onClick={() => {
+                  if (isLocked) {
+                    toast.info(
+                      section.id === 'modules' 
+                        ? 'Please click "Save and Continue" on Project Overview to unlock Modules'
+                        : section.id === 'userStoriesFeatures'
+                        ? 'Please generate Modules data first'
+                        : section.id === 'businessRules'
+                        ? 'Please generate User Stories & Features first'
+                        : section.id === 'actions'
+                        ? 'Please generate Business Rules first'
+                        : 'Please complete the previous section first'
+                    )
+                    return
+                  }
+                  setActiveSection(section.id)
+                }}
               >
                 {/* Progress bar at top */}
                 <div className="absolute top-0 left-0 right-0 h-1 bg-muted">
@@ -740,7 +760,17 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
                         {isLocked && <Lock className="w-4 h-4 text-muted-foreground" />}
                       </CardTitle>
                       <CardDescription className="text-sm mt-1">
-                        {isLocked ? 'Complete previous section to unlock' : section.description}
+                        {isLocked ? (
+                          section.id === 'modules' 
+                            ? 'Click "Save and Continue" on Project Overview to unlock'
+                            : section.id === 'userStoriesFeatures'
+                            ? 'Generate Modules data to unlock'
+                            : section.id === 'businessRules'
+                            ? 'Generate User Stories & Features to unlock'
+                            : section.id === 'actions'
+                            ? 'Generate Business Rules to unlock'
+                            : 'Complete previous section to unlock'
+                        ) : section.description}
                       </CardDescription>
                     </div>
                     <div className="px-3 py-1 rounded bg-gray-800/50 border border-gray-700/50 text-sm text-gray-400 flex-shrink-0">
