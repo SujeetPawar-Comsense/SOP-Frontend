@@ -170,12 +170,19 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           newUnlockedSections.add('businessRules')
           console.log('User Stories & Features data exists, unlocking Business Rules section')
           
-          // 4. Business Rules must have data to unlock Actions & Interactions
+          // 4. Business Rules must have data to unlock Actions & Interactions (original logic)
           const businessRulesCompletion = calculateBusinessRulesCompletion()
           if (businessRulesCompletion.total > 0 && businessRulesCompletion.completed > 0) {
             newUnlockedSections.add('actions')
             console.log('Business Rules data exists, unlocking Actions & Interactions section')
           }
+        }
+        
+        // 5. Actions & Interactions unlock when BOTH modules AND userStoriesFeatures are unlocked
+        //    (regardless of businessRules status)
+        if (newUnlockedSections.has('modules') && newUnlockedSections.has('userStoriesFeatures')) {
+          newUnlockedSections.add('actions')
+          console.log('Modules and User Stories & Features unlocked, unlocking Actions & Interactions section')
         }
       }
     }
@@ -976,7 +983,8 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         {activeSection === 'actions' && (
           <ActionsInteractionsEditor
             config={actionsInteractions}
-            onChange={saveActionsInteractions}
+            onChange={setActionsInteractions}
+            onSave={saveActionsInteractions}
             availableModules={modules}
           />
         )}

@@ -545,16 +545,47 @@ export const actionsAPI = {
   },
 
   save: async (projectId: string, actions: any) => {
-    const { data, error } = await supabase
+    // Check if a record already exists for this project
+    const { data: existingData, error: checkError } = await supabase
       .from('actions_interactions')
-      .upsert({
-        project_id: projectId,
-        config: actions,
-        apply_to_all_project: actions.applyToAllProjects || false,
-        specific_modules: actions.specificModules || []
-      })
-      .select()
+      .select('id')
+      .eq('project_id', projectId)
       .single()
+
+    let data, error
+
+    if (existingData && !checkError) {
+      // Update existing record
+      const { data: updateData, error: updateError } = await supabase
+        .from('actions_interactions')
+        .update({
+          config: actions,
+          apply_to_all_project: actions.applyToAllProjects || false,
+          specific_modules: actions.specificModules || [],
+          updated_at: new Date().toISOString()
+        })
+        .eq('project_id', projectId)
+        .select()
+        .single()
+
+      data = updateData
+      error = updateError
+    } else {
+      // Insert new record
+      const { data: insertData, error: insertError } = await supabase
+        .from('actions_interactions')
+        .insert({
+          project_id: projectId,
+          config: actions,
+          apply_to_all_project: actions.applyToAllProjects || false,
+          specific_modules: actions.specificModules || []
+        })
+        .select()
+        .single()
+
+      data = insertData
+      error = insertError
+    }
 
     if (error) throw error
     return { actions: data.config }

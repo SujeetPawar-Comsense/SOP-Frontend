@@ -1,29 +1,39 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Label } from './ui/label'
 import { Badge } from './ui/badge'
 import { Switch } from './ui/switch'
-import { ChevronDown, ChevronRight, CheckCircle2, Circle } from 'lucide-react'
+import { ChevronDown, ChevronRight, CheckCircle2, Circle, Save } from 'lucide-react'
 import { ActionsInteractionsConfig, InteractionCategory } from './ActionsInteractionsExcelUtils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { ScrollArea } from './ui/scroll-area'
+import { toast } from 'sonner'
 
 interface ActionsInteractionsEditorProps {
   config: ActionsInteractionsConfig
   onChange: (config: ActionsInteractionsConfig) => void
+  onSave?: (config: ActionsInteractionsConfig) => Promise<void>
   availableModules?: Array<{ id: string; moduleName: string }>
 }
 
 export default function ActionsInteractionsEditor({
   config,
   onChange,
+  onSave,
   availableModules = []
 }: ActionsInteractionsEditorProps) {
+  const [localConfig, setLocalConfig] = useState<ActionsInteractionsConfig>(config)
+  const [isSaving, setIsSaving] = useState(false)
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     'click-tap': true
   })
+
+  // Update local config when prop changes
+  useEffect(() => {
+    setLocalConfig(config)
+  }, [config])
 
   const toggleCategory = (categoryId: string) => {
     setExpandedCategories(prev => ({
@@ -33,22 +43,25 @@ export default function ActionsInteractionsEditor({
   }
 
   const handleActionToggle = (categoryId: string, actionName: string) => {
-    const currentActions = config.selectedActions[categoryId] || []
+    const currentActions = localConfig.selectedActions[categoryId] || []
     const newActions = currentActions.includes(actionName)
       ? currentActions.filter(a => a !== actionName)
       : [...currentActions, actionName]
 
-    onChange({
-      ...config,
+    const updatedConfig = {
+      ...localConfig,
       selectedActions: {
-        ...config.selectedActions,
+        ...localConfig.selectedActions,
         [categoryId]: newActions
       }
-    })
+    }
+    
+    setLocalConfig(updatedConfig)
+    onChange(updatedConfig) // Update parent state for UI updates, but don't save yet
   }
 
   const handleCategorySelectAll = (category: InteractionCategory) => {
-    const currentActions = config.selectedActions[category.id] || []
+    const currentActions = localConfig.selectedActions[category.id] || []
     // Convert all actions to strings (handle both string and object formats)
     const actionNames = category.actions.map(action => 
       typeof action === 'string' ? action : (action as any).name || ''
@@ -56,50 +69,78 @@ export default function ActionsInteractionsEditor({
     
     const allSelected = currentActions.length === actionNames.length
 
-    onChange({
-      ...config,
+    const updatedConfig = {
+      ...localConfig,
       selectedActions: {
-        ...config.selectedActions,
+        ...localConfig.selectedActions,
         [category.id]: allSelected ? [] : actionNames
       }
-    })
+    }
+    
+    setLocalConfig(updatedConfig)
+    onChange(updatedConfig) // Update parent state for UI updates, but don't save yet
   }
 
   const handleApplyToAllToggle = (checked: boolean) => {
-    onChange({
-      ...config,
+    const updatedConfig = {
+      ...localConfig,
       applyToAllProjects: checked,
-      specificModules: checked ? [] : config.specificModules
-    })
+      specificModules: checked ? [] : localConfig.specificModules
+    }
+    
+    setLocalConfig(updatedConfig)
+    onChange(updatedConfig) // Update parent state for UI updates, but don't save yet
   }
 
   const handleModuleToggle = (moduleId: string) => {
-    const newModules = config.specificModules.includes(moduleId)
-      ? config.specificModules.filter(id => id !== moduleId)
-      : [...config.specificModules, moduleId]
+    const newModules = localConfig.specificModules.includes(moduleId)
+      ? localConfig.specificModules.filter(id => id !== moduleId)
+      : [...localConfig.specificModules, moduleId]
 
-    onChange({
-      ...config,
+    const updatedConfig = {
+      ...localConfig,
       specificModules: newModules
-    })
+    }
+    
+    setLocalConfig(updatedConfig)
+    onChange(updatedConfig) // Update parent state for UI updates, but don't save yet
+  }
+
+  const handleSave = async () => {
+    if (!onSave) {
+      // If no onSave callback, just call onChange (backward compatibility)
+      onChange(localConfig)
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      await onSave(localConfig)
+      toast.success('Actions & Interactions saved successfully')
+    } catch (error: any) {
+      console.error('Error saving actions/interactions:', error)
+      toast.error('Failed to save Actions & Interactions')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const getTotalSelectedCount = () => {
-    return Object.values(config.selectedActions).reduce(
+    return Object.values(localConfig.selectedActions).reduce(
       (sum, actions) => sum + actions.length,
       0
     )
   }
 
   const getCategorySelectedCount = (categoryId: string) => {
-    const selectedActions = config.selectedActions[categoryId] || []
+    const selectedActions = localConfig.selectedActions[categoryId] || []
     // Ensure we're counting valid action names only
     return selectedActions.filter(action => typeof action === 'string' && action.trim()).length
   }
 
   const expandAll = () => {
     const expanded: Record<string, boolean> = {}
-    config.categories.forEach(cat => {
+    localConfig.categories.forEach(cat => {
       expanded[cat.id] = true
     })
     setExpandedCategories(expanded)
@@ -121,7 +162,7 @@ export default function ActionsInteractionsEditor({
                 <span className="text-primary">{getTotalSelectedCount()}</span> interactions selected
               </p>
               <p className="text-xs text-muted-foreground">
-                across {config.categories.length} categories
+                across {localConfig.categories.length} categories
               </p>
             </div>
           </div>
@@ -143,6 +184,17 @@ export default function ActionsInteractionsEditor({
           >
             Collapse All
           </Button>
+          {onSave && (
+            <Button
+              onClick={handleSave}
+              size="sm"
+              className="bg-primary hover:bg-primary/90"
+              disabled={isSaving}
+            >
+              <Save className="w-4 h-4 mr-2" />
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -159,21 +211,21 @@ export default function ActionsInteractionsEditor({
             <div className="flex items-center gap-3">
               <Switch
                 id="apply-all"
-                checked={config.applyToAllProjects}
+                checked={localConfig.applyToAllProjects}
                 onCheckedChange={handleApplyToAllToggle}
               />
               <Label htmlFor="apply-all" className="cursor-pointer">
                 Apply to All Projects
               </Label>
             </div>
-            {config.applyToAllProjects && (
+            {localConfig.applyToAllProjects && (
               <Badge variant="outline" className="border-primary/50 text-primary">
                 Global
               </Badge>
             )}
           </div>
 
-          {!config.applyToAllProjects && (
+          {!localConfig.applyToAllProjects && (
             <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
               <Label>Select Specific Modules</Label>
               {availableModules.length === 0 ? (
@@ -189,7 +241,7 @@ export default function ActionsInteractionsEditor({
                     >
                       <Checkbox
                         id={`module-${module.id}`}
-                        checked={config.specificModules.includes(module.id)}
+                        checked={localConfig.specificModules.includes(module.id)}
                         onCheckedChange={() => handleModuleToggle(module.id)}
                       />
                       <Label
@@ -202,9 +254,9 @@ export default function ActionsInteractionsEditor({
                   ))}
                 </div>
               )}
-              {config.specificModules.length > 0 && (
+              {localConfig.specificModules.length > 0 && (
                 <div className="text-sm text-primary">
-                  {config.specificModules.length} module(s) selected
+                  {localConfig.specificModules.length} module(s) selected
                 </div>
               )}
             </div>
@@ -219,7 +271,7 @@ export default function ActionsInteractionsEditor({
         </h3>
         <ScrollArea className="h-[600px] pr-4">
           <div className="space-y-3">
-            {config.categories.map((category, idx) => {
+            {localConfig.categories.map((category, idx) => {
               // Normalize actions to strings for counting
               const normalizedActions = category.actions.map(action =>
                 typeof action === 'string' ? action : (action as any).name || ''
@@ -300,7 +352,7 @@ export default function ActionsInteractionsEditor({
                             // Handle both string actions and object actions (for backward compatibility)
                             const actionName = typeof action === 'string' ? action : (action as any).name || ''
                             const actionKey = `${category.id}-${actionIdx}-${actionName}`
-                            const isSelected = config.selectedActions[category.id]?.includes(actionName)
+                            const isSelected = localConfig.selectedActions[category.id]?.includes(actionName)
                             
                             if (!actionName) {
                               console.warn('Invalid action in category:', category.id, action)
