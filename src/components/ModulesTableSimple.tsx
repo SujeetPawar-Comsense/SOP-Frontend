@@ -49,22 +49,87 @@ export default function ModulesTable({
 
   const handleEdit = (module: ModuleFeature) => {
     setEditingId(module.id)
-    // Convert array dependencies to comma-separated string for editing
-    setEditForm({ 
+    // Convert dependencies to comma-separated string for editing
+    // Normalize field names - handle both camelCase and snake_case from backend
+    const normalizeDependencies = (deps: any): string => {
+      if (!deps) return ''
+      
+      // If it's already a string
+      if (typeof deps === 'string') {
+        // Check if it's a JSON string
+        if (deps.trim().startsWith('[') || deps.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(deps)
+            if (Array.isArray(parsed)) {
+              return parsed.join(', ')
+            }
+            return String(parsed)
+          } catch {
+            // Not valid JSON, return as is (might be comma-separated already)
+            return deps
+          }
+        }
+        // Already a comma-separated string
+        return deps
+      }
+      
+      // If it's an array, join with commas
+      if (Array.isArray(deps)) {
+        return deps.join(', ')
+      }
+      
+      // Fallback: convert to string
+      return String(deps)
+    }
+    
+    const normalizedModule = {
       ...module,
-      dependencies: Array.isArray(module.dependencies) 
-        ? module.dependencies.join(', ') 
-        : module.dependencies 
-    })
+      moduleName: (module as any).module_name || module.moduleName || '',
+      description: module.description || '',
+      businessImpact: (module as any).business_impact || module.businessImpact || '',
+      dependencies: normalizeDependencies(module.dependencies)
+    }
+    setEditForm(normalizedModule)
   }
 
   const handleSave = () => {
     if (editForm && editingId) {
-      if (!editForm.moduleName || !editForm.description) {
+      // Extract values from editForm - check both camelCase and snake_case
+      const moduleName = editForm.moduleName || (editForm as any).module_name || ''
+      const description = editForm.description || ''
+      const businessImpact = editForm.businessImpact || (editForm as any).business_impact || ''
+      
+      console.log('Saving module:', { moduleName, description, businessImpact, editForm })
+      
+      if (!moduleName || !description) {
         toast.error('Module name and description are required')
         return
       }
-      onChange(modules.map(m => m.id === editingId ? editForm : m))
+      
+      // Find the original module to preserve all its properties
+      const originalModule = modules.find(m => m.id === editingId)
+      
+      // Normalize the module data before saving - preserve all original properties
+      const normalizedModule: ModuleFeature = {
+        ...originalModule, // Preserve original module properties
+        id: editingId, // Ensure ID is preserved
+        moduleName: moduleName, // Ensure camelCase name (explicitly set)
+        description: description,
+        businessImpact: businessImpact, // Ensure camelCase business impact (explicitly set)
+        dependencies: editForm.dependencies || originalModule?.dependencies || '',
+        priority: editForm.priority || originalModule?.priority || 'Medium',
+        status: editForm.status || originalModule?.status || 'Not Started'
+      }
+      
+      // Also set snake_case versions for backend compatibility
+      ;(normalizedModule as any).module_name = moduleName
+      ;(normalizedModule as any).business_impact = businessImpact
+      
+      console.log('Normalized module before save:', normalizedModule)
+      
+      // Update local state and trigger save via onChange
+      const updatedModules = modules.map(m => m.id === editingId ? normalizedModule : m)
+      onChange(updatedModules)
       setEditingId(null)
       setEditForm(null)
       toast.success('Module saved successfully')
@@ -180,8 +245,8 @@ export default function ModulesTable({
                     <>
                       <TableCell>
                         <Input
-                          value={editForm.module_name}
-                          onChange={(e) => setEditForm({ ...editForm, module_name: e.target.value })}
+                          value={editForm.moduleName || (editForm as any).module_name || ''}
+                          onChange={(e) => setEditForm({ ...editForm, moduleName: e.target.value })}
                           placeholder="Module name..."
                           className="bg-input-background border-primary/30"
                           autoFocus
@@ -189,7 +254,7 @@ export default function ModulesTable({
                       </TableCell>
                       <TableCell>
                         <Input
-                          value={editForm.descripdescriptiontion}
+                          value={editForm.description || ''}
                           onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                           placeholder="Description..."
                           className="bg-input-background border-primary/30"
@@ -212,7 +277,7 @@ export default function ModulesTable({
                       </TableCell>
                       <TableCell>
                         <Input
-                          value={editForm.businessImpact}
+                          value={editForm.businessImpact || (editForm as any).business_impact || ''}
                           onChange={(e) => setEditForm({ ...editForm, businessImpact: e.target.value })}
                           placeholder="Business impact..."
                           className="bg-input-background border-primary/30"
@@ -264,18 +329,50 @@ export default function ModulesTable({
                     </>
                   ) : (
                     <>
-                      <TableCell className="font-medium">{module.module_name}</TableCell>
+                      <TableCell className="font-medium">{(module as any).module_name || module.moduleName}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{module.description}</TableCell>
                       <TableCell>
                         <Badge className={getPriorityColor(module.priority)}>
                           {module.priority}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{module.business_impact || '-'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{(module as any).business_impact || module.businessImpact || '-'}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {Array.isArray(module.dependencies) 
-                          ? module.dependencies.join(', ') 
-                          : (module.dependencies || '-')}
+                        {(() => {
+                          // Helper function to format dependencies
+                          const formatDependencies = (deps: any): string => {
+                            if (!deps) return '-'
+                            
+                            // If it's already a string (comma-separated), return as is
+                            if (typeof deps === 'string') {
+                              // Check if it's a JSON string
+                              if (deps.trim().startsWith('[') || deps.trim().startsWith('{')) {
+                                try {
+                                  const parsed = JSON.parse(deps)
+                                  if (Array.isArray(parsed)) {
+                                    return parsed.join(', ')
+                                  }
+                                  return String(parsed)
+                                } catch {
+                                  // Not valid JSON, return as is (might be comma-separated already)
+                                  return deps
+                                }
+                              }
+                              // Already a comma-separated string
+                              return deps
+                            }
+                            
+                            // If it's an array, join with commas
+                            if (Array.isArray(deps)) {
+                              return deps.join(', ')
+                            }
+                            
+                            // Fallback: convert to string
+                            return String(deps)
+                          }
+                          
+                          return formatDependencies(module.dependencies)
+                        })()}
                       </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(module.status)}>

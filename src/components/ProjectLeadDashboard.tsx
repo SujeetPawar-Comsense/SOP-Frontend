@@ -448,10 +448,41 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   const saveModules = async (modulesList: ModuleFeature[]) => {
     setSaving(true)
     try {
-      await apiClient.post(`/projects/${projectId}/modules`, { modules: modulesList })
+      // Transform modules to backend format (snake_case)
+      const modulesForBackend = modulesList.map(module => {
+        const moduleName = (module as any).module_name || module.moduleName || ''
+        const businessImpact = (module as any).business_impact || module.businessImpact || ''
+        
+        console.log('Transforming module for backend:', { 
+          original: module, 
+          moduleName, 
+          businessImpact,
+          hasModuleName: !!module.moduleName,
+          hasModule_name: !!(module as any).module_name,
+          hasBusinessImpact: !!module.businessImpact,
+          hasBusiness_impact: !!(module as any).business_impact
+        })
+        
+        return {
+          id: module.id,
+          module_name: moduleName,
+          description: module.description || '',
+          priority: module.priority || 'Medium',
+          business_impact: businessImpact,
+          dependencies: Array.isArray(module.dependencies) 
+            ? module.dependencies.join(', ') 
+            : (module.dependencies || ''),
+          status: module.status || 'Not Started'
+        }
+      })
+      
+      console.log('Modules for backend:', modulesForBackend)
+      
+      await apiClient.post(`/projects/${projectId}/modules`, { modules: modulesForBackend })
       setModules(modulesList)
       toast.success('Modules saved')
     } catch (error: any) {
+      console.error('Error saving modules:', error)
       toast.error('Failed to save modules')
     } finally {
       setSaving(false)
