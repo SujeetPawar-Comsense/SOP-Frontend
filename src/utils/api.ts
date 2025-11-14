@@ -337,22 +337,51 @@ export const projectInformationAPI = {
   },
 
   save: async (projectId: string, projectInfo: any) => {
-    // Transform camelCase to snake_case for database
-    const { data, error } = await supabase
+    // Check if project information already exists
+    const { data: existingData, error: checkError } = await supabase
       .from('project_information')
-      .upsert({
-        project_id: projectId,
-        vision: projectInfo.vision || null,
-        purpose: projectInfo.purpose || null,
-        objectives: projectInfo.objectives || null,
-        project_scope: projectInfo.projectScope || null,
-        functional_requirements: projectInfo.functionalRequirements || null,
-        non_functional_requirements: projectInfo.nonFunctionalRequirements || null,
-        integration_requirements: projectInfo.integrationRequirements || null,
-        reporting_requirements: projectInfo.reportingRequirements || null
-      })
-      .select()
+      .select('project_id')
+      .eq('project_id', projectId)
       .single()
+    
+    // Record exists if we have data and no error, or if error is not "not found" (PGRST116)
+    const recordExists = existingData !== null && (!checkError || checkError.code !== 'PGRST116')
+
+    // Transform camelCase to snake_case for database
+    const projectInfoData = {
+      project_id: projectId,
+      vision: projectInfo.vision || null,
+      purpose: projectInfo.purpose || null,
+      objectives: projectInfo.objectives || null,
+      project_scope: projectInfo.projectScope || null,
+      functional_requirements: projectInfo.functionalRequirements || null,
+      non_functional_requirements: projectInfo.nonFunctionalRequirements || null,
+      integration_requirements: projectInfo.integrationRequirements || null,
+      reporting_requirements: projectInfo.reportingRequirements || null
+    }
+
+    let data, error
+
+    if (recordExists) {
+      // Update existing record
+      const result = await supabase
+        .from('project_information')
+        .update(projectInfoData)
+        .eq('project_id', projectId)
+        .select()
+        .single()
+      data = result.data
+      error = result.error
+    } else {
+      // Insert new record
+      const result = await supabase
+        .from('project_information')
+        .insert(projectInfoData)
+        .select()
+        .single()
+      data = result.data
+      error = result.error
+    }
 
     if (error) throw error
     return { projectInformation: data }

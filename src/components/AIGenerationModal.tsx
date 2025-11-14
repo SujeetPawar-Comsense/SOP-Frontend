@@ -36,14 +36,38 @@ export default function AIGenerationModal({
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [generatedData, setGeneratedData] = useState<any>(null)
+  const [hasStarted, setHasStarted] = useState(false)
 
   useEffect(() => {
-    if (open && projectOverview) {
+    // Reset hasStarted when modal closes
+    if (!open) {
+      setHasStarted(false)
+      setError(null)
+      setGeneratedData(null)
+      setCurrentStepIndex(0)
+      setSteps([
+        { id: 'user-stories', label: 'Generating User Stories...', status: 'pending' },
+        { id: 'modules', label: 'Modules & Features', status: 'pending' },
+        { id: 'business-rules', label: 'Business Rules', status: 'pending' },
+      ])
+      return
+    }
+
+    // Only start generation once when modal opens and projectOverview is available
+    if (open && projectOverview && !hasStarted) {
+      setHasStarted(true)
       startGeneration()
     }
-  }, [open, projectOverview])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]) // Only depend on 'open' to prevent multiple calls when projectOverview changes
 
   const startGeneration = async () => {
+    // Prevent duplicate calls - if already started, return
+    if (hasStarted && steps.some(s => s.status === 'in-progress' || s.status === 'completed')) {
+      console.log('Generation already in progress, skipping duplicate call')
+      return
+    }
+
     setError(null)
     setCurrentStepIndex(0)
     

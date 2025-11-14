@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Loader2, CheckCircle2, ChevronLeft, ChevronRight, Lock, Trash2, Settings } from 'lucide-react'
@@ -302,7 +302,8 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   }
   
   // Convert project information to the format expected by the API
-  const getProjectOverviewForAPI = () => {
+  // Memoize to prevent creating new object on every render
+  const projectOverviewForAPI = useMemo(() => {
     return {
       projectName: projectName,
       projectDescription: '', // This would come from project description
@@ -319,7 +320,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         reporting: projectInformation.reportingRequirements.split('\n').filter(r => r.trim())
       }
     }
-  }
+  }, [projectName, projectInformation])
 
   const loadProjectData = async () => {
     setLoading(true)
@@ -938,7 +939,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         }}
         onComplete={handleAIGenerationComplete}
         projectId={projectId}
-        projectOverview={getProjectOverviewForAPI()}
+        projectOverview={projectOverviewForAPI}
         brdContent={brdContentForGeneration}
       />
 
