@@ -7,7 +7,7 @@ import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Checkbox } from './ui/checkbox'
 import { Label } from './ui/label'
-import { Loader2, Book, Search, Zap, ChevronLeft, ChevronRight, Code2, Sparkles, ArrowLeft, Copy, FileText, ChevronDown, CheckCircle2, FileCode, ArrowUp } from 'lucide-react'
+import { Loader2, Book, Search, Zap, ChevronLeft, ChevronRight, Code2, Sparkles, ArrowLeft, Copy, FileText, ChevronDown, CheckCircle2, FileCode, ArrowUp, Calendar, Database, Percent, Image, Shield, CheckSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { modulesAPI, projectAPI, featuresAPI, vibePromptsAPI } from '../utils/api'
 import VibePromptGenerator from './VibePromptGenerator'
@@ -610,6 +610,190 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* AI Prompt Generator & Implementation Output */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+                  {/* Left: AI Prompt Generator */}
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground mb-1">AI Prompt Generator</h3>
+                      <p className="text-sm text-muted-foreground">Context-aware prompts for each layer</p>
+                    </div>
+
+                    {/* Prompt Type Selection */}
+                    <div className="flex gap-2 flex-wrap">
+                      {[
+                        { id: 'ui-components', label: 'UI Components', icon: FileText },
+                        { id: 'api-endpoints', label: 'API Endpoints', icon: Code2 },
+                        { id: 'database-schema', label: 'Database', icon: Database },
+                        { id: 'business-logic', label: 'Business Logic', icon: Percent },
+                        { id: 'authentication', label: 'Auth', icon: Shield },
+                        { id: 'validation', label: 'Validation', icon: CheckSquare },
+                        { id: 'testing', label: 'Testing', icon: CheckSquare }
+                      ].map((layer) => {
+                        const Icon = layer.icon
+                        const isSelected = selectedLayer === layer.id
+                        return (
+                          <button
+                            key={layer.id}
+                            onClick={() => setSelectedLayer(layer.id)}
+                            className={`p-2 rounded-lg border-2 transition-all ${
+                              isSelected
+                                ? 'border-green-500 bg-green-500/10'
+                                : 'border-primary/20 bg-card/50 hover:border-primary/40'
+                            }`}
+                          >
+                            <Icon className={`h-5 w-5 ${isSelected ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Selected Layer Card */}
+                    <Card className="border-primary/20 bg-card/50">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <h4 className="font-semibold text-foreground">
+                              {selectedLayer === 'ui-components' && 'UI Components'}
+                              {selectedLayer === 'api-endpoints' && 'API Endpoints'}
+                              {selectedLayer === 'database-schema' && 'Database Schema'}
+                              {selectedLayer === 'business-logic' && 'Business Logic'}
+                              {selectedLayer === 'authentication' && 'Authentication'}
+                              {selectedLayer === 'validation' && 'Validation'}
+                              {selectedLayer === 'testing' && 'Testing'}
+                            </h4>
+                            <p className="text-xs text-muted-foreground">
+                              {selectedLayer === 'ui-components' && 'Frontend components and styling'}
+                              {selectedLayer === 'api-endpoints' && 'RESTful API endpoints and routes'}
+                              {selectedLayer === 'database-schema' && 'Database tables and relationships'}
+                              {selectedLayer === 'business-logic' && 'Core business rules and logic'}
+                              {selectedLayer === 'authentication' && 'User authentication and authorization'}
+                              {selectedLayer === 'validation' && 'Data validation and sanitization'}
+                              {selectedLayer === 'testing' && 'Unit and integration tests'}
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="border-green-500/30 text-green-400">
+                            {selectedModule?.priority || 'High'}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Generated Prompt Preview */}
+                    <Card className="border-primary/20 bg-card/50">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="font-semibold text-foreground">Generated Prompt Preview</h4>
+                          <div className="flex items-center gap-3">
+                            {generatedPrompt && (
+                              <>
+                                <span className="text-xs text-muted-foreground">
+                                  {generatedPrompt.split('\n').length} lines • {generatedPrompt.length} chars
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={handleCopyPrompt}
+                                  className="border-green-500/30 text-green-400 hover:bg-green-500/10"
+                                >
+                                  <Copy className="h-4 w-4 mr-2" />
+                                  Copy Prompt
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {generatedPrompt ? (
+                          <div className="bg-background/50 rounded-lg p-4 border border-primary/20 max-h-96 overflow-y-auto">
+                            <pre className="text-xs text-foreground whitespace-pre-wrap font-mono">
+                              {generatedPrompt}
+                            </pre>
+                          </div>
+                        ) : (
+                          <div className="bg-background/50 rounded-lg p-8 border border-primary/20 border-dashed text-center">
+                            <FileText className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                              Select a layer and generate a prompt to get started
+                            </p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Generate Code Button */}
+                    <Button
+                      onClick={() => handleGeneratePrompt(selectedLayer)}
+                      disabled={generatingPrompt || !selectedModule}
+                      className="w-full bg-green-500 hover:bg-green-600 text-white"
+                      size="lg"
+                    >
+                      {generatingPrompt ? (
+                        <>
+                          <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="h-5 w-5 mr-2" />
+                          Generate Code
+                        </>
+                      )}
+                    </Button>
+
+                    <p className="text-xs text-muted-foreground text-center">
+                      This prompt includes full project context, feature details, dependencies, and ui components best practices. Use it with your AI assistant for context-aware code generation.
+                    </p>
+                  </div>
+
+                  {/* Right: Implementation Output */}
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground mb-1">Implementation Output</h3>
+                      <p className="text-sm text-muted-foreground">Track your code and progress</p>
+                    </div>
+
+                    {/* Code / Implementation Notes */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold">Code / Implementation Notes</Label>
+                      <Textarea
+                        value={implementation.code}
+                        onChange={(e) => setImplementation(prev => ({ ...prev, code: e.target.value }))}
+                        placeholder="Paste your implementation code, file paths, or implementation details..."
+                        className="min-h-[200px] bg-background/50 border-primary/20 resize-none"
+                      />
+                    </div>
+
+                    {/* Developer Notes */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold">Developer Notes</Label>
+                      <Textarea
+                        value={implementation.developerNotes}
+                        onChange={(e) => setImplementation(prev => ({ ...prev, developerNotes: e.target.value }))}
+                        placeholder="Add notes about challenges, decisions, or questions..."
+                        className="min-h-[150px] bg-background/50 border-primary/20 resize-none"
+                      />
+                    </div>
+
+                    {/* AI Prompts Used & Status */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <Card className="border-primary/20 bg-card/50">
+                        <CardContent className="p-4">
+                          <p className="text-xs text-muted-foreground mb-1">AI Prompts Used</p>
+                          <p className="text-2xl font-bold text-foreground">{implementation.aiPromptsUsed}</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-primary/20 bg-card/50">
+                        <CardContent className="p-4">
+                          <p className="text-xs text-muted-foreground mb-1">Status</p>
+                          <Badge variant="outline" className="mt-1">
+                            {implementation.status}
+                          </Badge>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
         </TabsContent>
