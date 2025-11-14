@@ -11,9 +11,10 @@ import { toast } from 'sonner@2.0.3';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
+  onSignupSuccess: (email: string) => void;
 }
 
-export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
+export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSignupSuccess }) => {
   const { signUp } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -41,9 +42,9 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
 
     try {
       await signUp(email, password, name, role);
-      // Signup successful - redirect to login
-      toast.success('Account created successfully! Please sign in.');
-      onSwitchToLogin();
+      // Signup successful - show verification screen
+      toast.success('Account created successfully! Please verify your email.');
+      onSignupSuccess(email);
     } catch (err: any) {
       // Parse error message and make it user-friendly
       let errorMessage = err.message || 'Failed to sign up. Please try again.';
@@ -53,7 +54,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
       errorMessage = errorMessage.replace(/^Error:\s*/i, '');
       
       // Handle specific error cases
-      if (errorMessage.toLowerCase().includes('already been registered')) {
+      if (errorMessage.toLowerCase().includes('already been registered') || 
+          errorMessage.toLowerCase().includes('already exists')) {
         errorMessage = 'This email is already registered. Please sign in instead.';
       } else if (errorMessage.toLowerCase().includes('invalid email')) {
         errorMessage = 'Please enter a valid email address.';
