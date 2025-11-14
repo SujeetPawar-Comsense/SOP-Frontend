@@ -773,7 +773,13 @@ export const featuresAPI = {
 // ============================================
 
 export const vibePromptsAPI = {
-  generate: async (projectId: string, developmentType: DevelopmentType, previousOutputs: string[] = []) => {
+  generate: async (
+    projectId: string, 
+    developmentType: DevelopmentType | string, 
+    previousOutputs: string[] = [],
+    selectedModuleId?: string,
+    selectedFeatureId?: string
+  ) => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw new Error('Not authenticated')
 
@@ -786,13 +792,40 @@ export const vibePromptsAPI = {
       body: JSON.stringify({
         projectId,
         developmentType,
-        previousOutputs
+        previousOutputs,
+        selectedModuleId,
+        selectedFeatureId
       })
     })
 
     if (!response.ok) {
       const error = await response.json()
       throw new Error(error.message || 'Failed to generate Vibe prompt')
+    }
+
+    const result = await response.json()
+    return result
+  },
+
+  saveImplementation: async (promptId: string, implementationCode: string, developerNotes?: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/${promptId}/implementation`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        implementationCode,
+        developerNotes
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to save implementation')
     }
 
     const result = await response.json()

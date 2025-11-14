@@ -50,7 +50,9 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
   const [projectData, setProjectData] = useState<any>(null)
   const [selectedModules, setSelectedModules] = useState<Set<string>>(new Set())
   const [selectedModule, setSelectedModule] = useState<Module | null>(null)
+  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null)
   const [features, setFeatures] = useState<Feature[]>([])
+  const [currentPromptId, setCurrentPromptId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -125,22 +127,18 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
       }
 
       const developmentType = layerMap[layer] || 'UI Components'
-      
-      const moduleName = selectedModule.module_name || selectedModule.moduleName || ''
-      const moduleDescription = selectedModule.description || ''
-      const modulePriority = selectedModule.priority || 'Medium'
-      const businessImpact = selectedModule.business_impact || selectedModule.businessImpact || ''
-      const dependencies = selectedModule.dependencies || ''
 
-      const prompt = await vibePromptsAPI.generate(projectId, developmentType as any, [
-        `Module: ${moduleName}`,
-        `Description: ${moduleDescription}`,
-        `Priority: ${modulePriority}`,
-        `Business Impact: ${businessImpact}`,
-        `Dependencies: ${dependencies}`
-      ])
+      // Generate prompt with selected module and feature
+      const prompt = await vibePromptsAPI.generate(
+        projectId, 
+        developmentType,
+        [], // previousOutputs will be fetched by backend
+        selectedModule.id,
+        selectedFeature?.id
+      )
 
-      setGeneratedPrompt(prompt.generatedPrompt || '')
+      setGeneratedPrompt(prompt.generatedPrompt || prompt.prompt?.generated_prompt || '')
+      setCurrentPromptId(prompt.prompt?.id || null)
       setImplementation(prev => ({
         ...prev,
         aiPromptsUsed: prev.aiPromptsUsed + 1
@@ -151,6 +149,29 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
       toast.error(error.message || 'Failed to generate prompt')
     } finally {
       setGeneratingPrompt(false)
+    }
+  }
+
+  const handleSaveImplementation = async () => {
+    if (!currentPromptId) {
+      toast.error('No prompt generated yet. Please generate a prompt first.')
+      return
+    }
+
+    try {
+      await vibePromptsAPI.saveImplementation(
+        currentPromptId,
+        implementation.code,
+        implementation.developerNotes
+      )
+      toast.success('Implementation saved successfully!')
+      setImplementation(prev => ({
+        ...prev,
+        status: 'In Progress'
+      }))
+    } catch (error: any) {
+      console.error('Failed to save implementation:', error)
+      toast.error(error.message || 'Failed to save implementation')
     }
   }
 
@@ -593,15 +614,25 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {features.filter(f => f.moduleId === selectedModule.id).length > 0 ? (
-                        features.filter(f => f.moduleId === selectedModule.id).map((feature) => (
-                          <div
-                            key={feature.id}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20"
-                          >
-                            <CheckCircle2 className="h-4 w-4 text-primary" />
-                            <span className="text-sm">{feature.title || 'Untitled Feature'}</span>
-                          </div>
-                        ))
+                        features.filter(f => f.moduleId === selectedModule.id).map((feature) => {
+                          const isSelected = selectedFeature?.id === feature.id
+                          return (
+                            <div
+                              key={feature.id}
+                              onClick={() => setSelectedFeature(isSelected ? null : feature)}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                                isSelected
+                                  ? 'bg-primary/20 border-primary shadow-lg shadow-primary/20'
+                                  : 'bg-primary/10 border-primary/20 hover:border-primary/40'
+                              }`}
+                            >
+                              <CheckCircle2 className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-primary/60'}`} />
+                              <span className={`text-sm ${isSelected ? 'font-semibold' : ''}`}>
+                                {feature.title || 'Untitled Feature'}
+                              </span>
+                            </div>
+                          )
+                        })
                       ) : (
                         <p className="text-sm text-muted-foreground">
                           No features available for this module
@@ -755,7 +786,18 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
 
                     {/* Code / Implementation Notes */}
                     <div className="space-y-2">
-                      <Label className="text-sm font-semibold">Code / Implementation Notes</Label>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-semibold">Code / Implementation Notes</Label>
+                        <Button
+                          onClick={handleSaveImplementation}
+                          size="sm"
+                          className="bg-green-500 hover:bg-green-600 text-white"
+                          disabled={!currentPromptId || !implementation.code.trim()}
+                        >
+                          <FileCode className="h-4 w-4 mr-2" />
+                          Save Implementation
+                        </Button>
+                      </div>
                       <Textarea
                         value={implementation.code}
                         onChange={(e) => setImplementation(prev => ({ ...prev, code: e.target.value }))}
