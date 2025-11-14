@@ -7,6 +7,7 @@ export interface RuleSubcategory {
   example: string
   userRule?: string // User's custom business rule for this subcategory
   isCustom?: boolean // If true, this was added by the user
+  applicableTo?: string[] // Modules this rule applies to
 }
 
 export interface RuleCategory {

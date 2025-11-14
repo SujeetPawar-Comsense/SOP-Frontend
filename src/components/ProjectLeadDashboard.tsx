@@ -367,13 +367,71 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
 
       // Load business rules
       const businessRulesResponse = await apiClient.get(`/projects/${projectId}/business-rules`)
-      if (businessRulesResponse.businessRules) {
-        // Merge with default business rules to ensure all properties exist
-        const defaultRules = createDefaultBusinessRulesConfig()
+      console.log('📋 Business rules response:', businessRulesResponse)
+      
+      if (businessRulesResponse.businessRules && businessRulesResponse.businessRules.categories) {
+        const loadedCategories = businessRulesResponse.businessRules.categories || []
+        console.log('📋 Loaded categories:', loadedCategories)
+        
+        // Transform database format to frontend format
+        // Database format: categories: [{ id, name, description, applicableTo }]
+        // Frontend format: categories: [{ id, name, subcategories: [{ id, name, example, userRule }] }]
+        
+        let transformedCategories: any[] = []
+        
+        if (loadedCategories.length > 0) {
+          // Check if it's the database format (has description and applicableTo, no subcategories)
+          const isDatabaseFormat = loadedCategories[0] && 
+            typeof loadedCategories[0] === 'object' &&
+            'description' in loadedCategories[0] &&
+            'applicableTo' in loadedCategories[0] &&
+            !('subcategories' in loadedCategories[0])
+          
+          if (isDatabaseFormat) {
+            console.log('📋 Transforming database format to frontend format')
+            // Group all rules into a single "Business Rules" category
+            const businessRulesCategory = {
+              id: 'business-rules',
+              name: 'Business Rules',
+              subcategories: loadedCategories.map((rule: any, index: number) => {
+                const ruleDescription = rule.description || ''
+                return {
+                  id: rule.id || `rule-${index}`,
+                  name: rule.name || 'Business Rule',
+                  example: ruleDescription, // Display as example/description
+                  userRule: ruleDescription, // Set as userRule so it shows as "Defined"
+                  applicableTo: rule.applicableTo || [] // Keep for reference
+                }
+              }),
+              customSubcategories: []
+            }
+            
+            transformedCategories = [businessRulesCategory]
+            console.log('📋 Created business rules category with', businessRulesCategory.subcategories.length, 'rules')
+            console.log('📋 Sample rule:', businessRulesCategory.subcategories[0])
+          } else {
+            // Already in frontend format
+            console.log('📋 Business rules already in frontend format')
+            transformedCategories = loadedCategories
+          }
+        }
+        
+        // Create final business rules config with ONLY dynamic rules (no static defaults)
+        const finalBusinessRules = {
+          categories: transformedCategories,
+          applyToAllProjects: businessRulesResponse.businessRules.applyToAllProjects ?? false,
+          specificModules: businessRulesResponse.businessRules.specificModules || []
+        }
+        
+        console.log('📋 Final business rules (dynamic only):', finalBusinessRules)
+        setBusinessRules(finalBusinessRules)
+      } else {
+        // No business rules found, set empty config (no static defaults)
+        console.log('📋 No business rules found, setting empty config')
         setBusinessRules({
-          ...defaultRules,
-          ...businessRulesResponse.businessRules,
-          categories: businessRulesResponse.businessRules.categories || defaultRules.categories
+          categories: [],
+          applyToAllProjects: false,
+          specificModules: []
         })
       }
 

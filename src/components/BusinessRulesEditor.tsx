@@ -30,6 +30,27 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
   const [showAIMagicDialog, setShowAIMagicDialog] = useState(false)
   const [aiMagicStage, setAIMagicStage] = useState(0)
 
+  // Auto-expand categories that have defined rules
+  useEffect(() => {
+    if (config.categories && config.categories.length > 0) {
+      const categoriesWithRules = config.categories
+        .filter(category => {
+          const hasDefinedRules = (category.subcategories || []).some(
+            sub => sub.userRule && sub.userRule.trim() !== ''
+          )
+          const hasCustomRules = (category.customSubcategories || []).some(
+            sub => sub.userRule && sub.userRule.trim() !== ''
+          )
+          return hasDefinedRules || hasCustomRules
+        })
+        .map(category => category.id)
+      
+      if (categoriesWithRules.length > 0) {
+        setExpandedCategories(new Set(categoriesWithRules))
+      }
+    }
+  }, [config.categories])
+
   const toggleCategory = (categoryId: string) => {
     const newExpanded = new Set(expandedCategories)
     if (newExpanded.has(categoryId)) {
@@ -258,7 +279,8 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
 
       {/* Business Rules Categories */}
       <div className="space-y-3">
-        {config.categories.map(category => {
+        {config.categories && config.categories.length > 0 ? (
+          config.categories.map(category => {
           const counts = getRuleCounts(category)
           const isExpanded = expandedCategories.has(category.id)
 
@@ -328,6 +350,20 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground mb-2">{subcategory.example}</p>
+                            
+                            {/* Display applicable modules if available */}
+                            {(subcategory as any).applicableTo && Array.isArray((subcategory as any).applicableTo) && (subcategory as any).applicableTo.length > 0 && (
+                              <div className="mb-2">
+                                <p className="text-xs font-semibold text-cyan-400 mb-1">Applicable To:</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {(subcategory as any).applicableTo.map((module: string, idx: number) => (
+                                    <Badge key={idx} variant="outline" className="text-[10px] border-cyan-500/30 text-cyan-400">
+                                      {module}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
 
                             {editingSubcategory?.categoryId === category.id &&
                             editingSubcategory?.subcategoryId === subcategory.id ? (
@@ -421,6 +457,20 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground mb-2">{subcategory.example}</p>
+                            
+                            {/* Display applicable modules if available */}
+                            {(subcategory as any).applicableTo && Array.isArray((subcategory as any).applicableTo) && (subcategory as any).applicableTo.length > 0 && (
+                              <div className="mb-2">
+                                <p className="text-xs font-semibold text-cyan-400 mb-1">Applicable To:</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {(subcategory as any).applicableTo.map((module: string, idx: number) => (
+                                    <Badge key={idx} variant="outline" className="text-[10px] border-cyan-500/30 text-cyan-400">
+                                      {module}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
 
                             {editingSubcategory?.categoryId === category.id &&
                             editingSubcategory?.subcategoryId === subcategory.id ? (
@@ -554,7 +604,17 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
               </Collapsible>
             </Card>
           )
-        })}
+        })
+        ) : (
+          <Card className="border-primary/20 bg-card/50">
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground mb-2">No business rules found</p>
+              <p className="text-sm text-muted-foreground">
+                Business rules will appear here after they are generated from your BRD or added manually.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )
