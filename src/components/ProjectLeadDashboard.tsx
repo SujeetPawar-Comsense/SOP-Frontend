@@ -359,11 +359,12 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       const featuresResponse = await apiClient.get(`/projects/${projectId}/features`)
       console.log('Features response:', featuresResponse)
       if (featuresResponse.features) {
-        // Normalize features to ensure userStoryId is properly set
+        // Normalize features to ensure userStoryId and businessRules are properly set
         const normalizedFeatures = featuresResponse.features.map((f: any) => ({
           ...f,
           userStoryId: f.userStoryId || f.user_story_id || null, // Handle both camelCase and snake_case
-          moduleId: f.moduleId || f.module_id || null
+          moduleId: f.moduleId || f.module_id || null,
+          businessRules: f.businessRules || f.business_rules || null // Handle both camelCase and snake_case
         }))
         setFeatures(normalizedFeatures)
         console.log('Features set:', normalizedFeatures)
@@ -910,6 +911,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           <ModulesTable
             modules={modules}
             projectId={projectId}
+            features={features}
             onChange={saveModules}
           />
         )}

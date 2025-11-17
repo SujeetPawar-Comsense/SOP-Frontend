@@ -3,7 +3,7 @@ import { toast } from 'sonner@2.0.3'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { Trash2, Plus, Edit2, Check, X, Shield, Wand2, CheckCircle2, RotateCcw, Save, Sparkles, Loader2 } from 'lucide-react'
+import { Trash2, Plus, Edit2, Check, X, Shield, Wand2, CheckCircle2, RotateCcw, Save, Loader2 } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
@@ -11,6 +11,7 @@ import { Label } from './ui/label'
 import { ModuleFeature } from './ExcelUtils'
 import AIGeneralEnhancement from './AIGeneralEnhancement'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { businessRulesAPI } from '../utils/api'
 
 // Keep old exports for compatibility
 export interface ModuleFeatures {
@@ -21,15 +22,31 @@ export interface ModuleBusinessRules {
   [moduleId: string]: string[]
 }
 
+interface FeatureTask {
+  id: string
+  title: string
+  description?: string
+  moduleId?: string
+  userStoryId?: string
+  priority?: string
+  status?: string
+  estimatedHours?: number
+  businessRules?: string
+  business_rules?: string // Support both camelCase and snake_case
+  [key: string]: any
+}
+
 interface ModulesTableProps {
   modules: ModuleFeature[]
   projectId?: string
+  features?: FeatureTask[]
   onChange: (modules: ModuleFeature[]) => void
 }
 
 export default function ModulesTable({ 
   modules,
   projectId,
+  features = [],
   onChange
 }: ModulesTableProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -41,6 +58,8 @@ export default function ModulesTable({
   const [editingRuleText, setEditingRuleText] = useState('')
   const [showAIMagicDialog, setShowAIMagicDialog] = useState(false)
   const [aiMagicStage, setAIMagicStage] = useState(0)
+  const [loadingBusinessRules, setLoadingBusinessRules] = useState(false)
+  const [moduleBusinessRules, setModuleBusinessRules] = useState<Record<string, string[]>>({})
   const businessRulesCardRef = useRef<HTMLDivElement>(null)
 
   const handleAddModule = () => {
@@ -165,9 +184,38 @@ export default function ModulesTable({
     toast.success('Module deleted successfully')
   }
 
-  const handleModuleClick = (moduleId: string) => {
+  const handleModuleClick = async (moduleId: string) => {
     if (editingId) return // Don't allow selection while editing
-    setSelectedModuleId(selectedModuleId === moduleId ? null : moduleId)
+    
+    // If clicking the same module, deselect it
+    if (selectedModuleId === moduleId) {
+      setSelectedModuleId(null)
+      return
+    }
+    
+    // Select the new module
+    setSelectedModuleId(moduleId)
+    
+    // Fetch business rules for this module from API
+    if (projectId && moduleId) {
+      setLoadingBusinessRules(true)
+      try {
+        const response = await businessRulesAPI.getByModule(projectId, moduleId)
+        setModuleBusinessRules({
+          ...moduleBusinessRules,
+          [moduleId]: response.businessRules || []
+        })
+      } catch (error: any) {
+        console.error('Error fetching business rules:', error)
+        toast.error('Failed to load business rules for this module')
+        setModuleBusinessRules({
+          ...moduleBusinessRules,
+          [moduleId]: []
+        })
+      } finally {
+        setLoadingBusinessRules(false)
+      }
+    }
   }
 
   // Scroll to business rules card when a module is selected
@@ -213,170 +261,7 @@ export default function ModulesTable({
     setAIMagicStage(0)
   }
 
-  // Get recommended business rules based on module name
-  const getRecommendedBusinessRules = (moduleName: string): string[] => {
-    const rulesMap: Record<string, string[]> = {
-      'Login & Authentication': [
-        'Password must be minimum 8 characters with uppercase, lowercase, number, and special character',
-        'Account locked after 5 consecutive failed login attempts',
-        'Session expires after 30 minutes of inactivity',
-        'JWT tokens expire after 24 hours',
-        '2FA is mandatory for admin accounts',
-        'Email verification required before account activation',
-        'Password reset link expires after 1 hour',
-        'Users cannot reuse last 5 passwords',
-        'OAuth accounts must link to existing email or create new account',
-        'Concurrent sessions limited to 3 devices per user'
-      ],
-      'Product Catalogue': [
-        'Products must have at least one image before going live',
-        'Minimum 50 character product description required',
-        'Price cannot be negative or zero',
-        'Discount percentage cannot exceed 90%',
-        'Out-of-stock products remain visible but cannot be purchased',
-        'Product SKU must be unique across all products',
-        'Categories can be nested up to 3 levels deep',
-        'Products must belong to at least one category',
-        'Image file size cannot exceed 5MB',
-        'Maximum 10 images per product'
-      ],
-      'Shopping Cart': [
-        'Cart items expire after 7 days of inactivity',
-        'Maximum 50 items allowed per cart',
-        'Quantity cannot exceed available stock',
-        'Cart total must be recalculated on every item change',
-        'Promo codes expire at specified date/time',
-        'Only one promo code can be applied per order',
-        'Guest carts merge with user cart upon login',
-        'Price lock for 15 minutes after adding to cart',
-        'Minimum order value of $10 required for checkout',
-        'Free shipping applies for orders over $50'
-      ],
-      'Checkout Module': [
-        'Billing and shipping addresses can be different',
-        'Phone number required for delivery confirmation',
-        'Order cannot proceed if any item is out of stock',
-        'Tax calculated based on shipping address',
-        'Shipping cost calculated based on weight and destination',
-        'Guest checkout allowed but requires email verification',
-        'Order confirmation sent within 2 minutes of placement',
-        'Inventory reserved during checkout for 15 minutes',
-        'PO Box addresses not allowed for certain product types',
-        'International orders require additional customs information'
-      ],
-      'Payment Processing': [
-        'Payment must be verified before order confirmation',
-        'Failed payments trigger automatic retry up to 3 times',
-        'Refunds processed within 5-7 business days',
-        'Partial refunds allowed for returns',
-        'Payment methods expire and must be re-verified annually',
-        '3D Secure verification required for transactions over $500',
-        'Cryptocurrency payments convert at time of transaction',
-        'Stored payment methods must be tokenized, never raw card numbers',
-        'Chargeback notifications sent immediately to admin',
-        'Daily transaction limit of $10,000 per user account'
-      ],
-      'Order Management': [
-        'Orders can be cancelled within 2 hours of placement',
-        'Cancellation not allowed once shipping label is generated',
-        'Returns accepted within 30 days of delivery',
-        'Refund amount excludes shipping costs unless item is defective',
-        'Order status updates trigger email notifications',
-        'Tracking number provided within 24 hours of shipment',
-        'Invoice generated immediately upon order placement',
-        'Reorders use latest product pricing, not original order price',
-        'Bulk orders (>100 items) require manager approval',
-        'Priority shipping upgrade available until order ships'
-      ],
-      'User Profile': [
-        'Users can save up to 5 addresses',
-        'One address must be marked as default',
-        'Profile picture maximum size 2MB',
-        'Email change requires verification of both old and new email',
-        'Users can delete account but order history is retained',
-        'Wishlist limited to 100 items',
-        'Wishlist items out of stock for 90 days are auto-removed',
-        'Notification preferences saved per communication channel',
-        'Privacy settings allow opt-out of marketing emails',
-        'Account data export available in GDPR-compliant format'
-      ],
-      'Inventory Management': [
-        'Low stock alert triggered at 10 units or less',
-        'Automatic reorder triggered at 5 units or less',
-        'Inventory updates sync in real-time across all channels',
-        'Stock reservation prevents overselling during checkout',
-        'Reserved stock released after 15 minutes if checkout abandoned',
-        'Backorders allowed with estimated restock date',
-        'Inventory audit required monthly for discrepancy resolution',
-        'SKU changes trigger notification to all affected orders',
-        'Multi-warehouse support with priority-based fulfillment',
-        'Damaged/returned items quarantined for inspection'
-      ],
-      'Product Reviews & Ratings': [
-        'Only verified purchasers can leave reviews',
-        'Reviews can be submitted within 90 days of purchase',
-        'Minimum 10 character review text required',
-        'Profanity and personal information automatically filtered',
-        'Reviews moderated within 24 hours',
-        'Users can edit review once within 48 hours',
-        'Sellers can respond to reviews once',
-        'Average rating calculated from verified reviews only',
-        'Review images limited to 3 per review',
-        'Spam reviews detected and removed automatically'
-      ],
-      'Search & Recommendations': [
-        'Search results ranked by relevance, then sales, then rating',
-        'Misspellings auto-corrected using fuzzy matching',
-        'Search history stored for 90 days for logged-in users',
-        'Recommendations updated every 24 hours',
-        'Personalized recommendations based on browse and purchase history',
-        'Trending products calculated from last 7 days activity',
-        'Out-of-stock products ranked lower in search results',
-        'Search filters persist during session',
-        'Recently viewed limited to last 20 products',
-        'Collaborative filtering used for "Customers Also Bought"'
-      ],
-      'Admin Dashboard': [
-        'Only admin role can access dashboard',
-        'All actions logged with timestamp and user ID',
-        'Bulk operations limited to 1000 items at once',
-        'Product approval required before going live',
-        'Price changes over 20% require manager approval',
-        'Promotional campaigns must have start and end dates',
-        'Dashboard data refreshed every 5 minutes',
-        'Export reports limited to last 2 years of data',
-        'User role changes require super admin approval',
-        'Audit trail maintained for all admin actions'
-      ],
-      'Notifications & Alerts': [
-        'Order confirmation sent immediately',
-        'Shipping notifications sent when tracking number assigned',
-        'Delivery confirmation sent upon carrier confirmation',
-        'Abandoned cart reminders sent after 24 hours',
-        'Price drop alerts sent for wishlisted items',
-        'Back-in-stock notifications sent within 1 hour of restock',
-        'Promotional emails limited to 2 per week',
-        'SMS notifications require opt-in',
-        'Unsubscribe link required in all marketing emails',
-        'Critical alerts (fraud, security) sent via all channels'
-      ]
-    }
-    
-    return rulesMap[moduleName] || []
-  }
 
-  // Add a recommended business rule to the selected module
-  const handleAddRecommendedRule = (rule: string) => {
-    if (!selectedModuleId) return
-    
-    const currentRules = selectedBusinessRules[selectedModuleId] || []
-    if (currentRules.includes(rule)) return // Don't add duplicates
-    
-    setSelectedBusinessRules({
-      ...selectedBusinessRules,
-      [selectedModuleId]: [...currentRules, rule]
-    })
-  }
 
   // Add a custom business rule to the selected module
   const handleAddCustomRule = () => {
@@ -456,30 +341,6 @@ export default function ModulesTable({
     toast.success(`All business rules cleared for "${moduleName}"`)
   }
 
-  // Select all recommended business rules
-  const handleSelectAllRecommendedRules = () => {
-    if (!selectedModuleId) return
-    
-    const selectedModule = modules.find(m => m.id === selectedModuleId)
-    const moduleName = (selectedModule as any)?.module_name || selectedModule?.moduleName || ''
-    const recommendedRules = getRecommendedBusinessRules(moduleName)
-    const currentRules = selectedBusinessRules[selectedModuleId] || []
-    
-    // Filter out rules that are already selected
-    const newRules = recommendedRules.filter(rule => !currentRules.includes(rule))
-    
-    if (newRules.length === 0) {
-      toast.info('All recommended business rules are already selected')
-      return
-    }
-    
-    setSelectedBusinessRules({
-      ...selectedBusinessRules,
-      [selectedModuleId]: [...currentRules, ...newRules]
-    })
-    
-    toast.success(`Added ${newRules.length} recommended business rule${newRules.length !== 1 ? 's' : ''}`)
-  }
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -760,7 +621,10 @@ export default function ModulesTable({
         if (!selectedModule) return null
         
         const moduleName = (selectedModule as any)?.module_name || selectedModule?.moduleName || 'Module'
-        const recommendedRules = getRecommendedBusinessRules(moduleName)
+        
+        // Get business rules from API (fetched when module was clicked)
+        const extractedRules = moduleBusinessRules[selectedModuleId] || []
+        
         const moduleSelectedRules = selectedBusinessRules[selectedModuleId] || []
         
         return (
@@ -788,12 +652,48 @@ export default function ModulesTable({
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Selected Business Rules Section */}
+                {/* Loading State */}
+                {loadingBusinessRules && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-primary animate-spin mr-2" />
+                    <span className="text-sm text-muted-foreground">Loading business rules...</span>
+                  </div>
+                )}
+
+                {/* Business Rules from API Section */}
+                {!loadingBusinessRules && extractedRules.length > 0 && (
+                  <div className="space-y-3">
+                    <Label className="text-sm text-primary flex items-center gap-2">
+                      <Shield className="w-4 h-4" />
+                      Business Rules ({extractedRules.length})
+                    </Label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {extractedRules.map((rule, idx) => (
+                        <div
+                          key={`extracted-${idx}`}
+                          className="flex items-start gap-2 p-3 rounded-md bg-cyan-500/10 border border-cyan-500/30"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
+                          <span className="text-xs text-foreground flex-1">{rule}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* No Rules Message */}
+                {!loadingBusinessRules && extractedRules.length === 0 && moduleSelectedRules.length === 0 && (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    No business rules found for this module. Add custom rules below.
+                  </div>
+                )}
+
+                {/* Manually Added Business Rules Section */}
                 {moduleSelectedRules.length > 0 && (
                   <div className="space-y-3">
                     <Label className="text-sm text-primary flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4" />
-                      Selected Business Rules ({moduleSelectedRules.length})
+                      Additional Business Rules ({moduleSelectedRules.length})
                     </Label>
                     <div className="grid grid-cols-1 gap-2">
                       {moduleSelectedRules.map((rule, idx) => (
@@ -882,50 +782,6 @@ export default function ModulesTable({
                     </Button>
                   </div>
                 </div>
-
-                {/* Recommended Business Rules */}
-                {recommendedRules.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm text-muted-foreground">
-                        Recommended Business Rules ({recommendedRules.length})
-                      </Label>
-                      <Button
-                        onClick={handleSelectAllRecommendedRules}
-                        size="sm"
-                        variant="outline"
-                        className="gap-2 border-primary/30 hover:bg-primary/10 hover:text-primary text-xs h-7"
-                        disabled={recommendedRules.every(r => moduleSelectedRules.includes(r))}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Select All ({recommendedRules.filter(r => !moduleSelectedRules.includes(r)).length})
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-primary/30 scrollbar-track-secondary/20 hover:scrollbar-thumb-primary/50">
-                      {recommendedRules.map((rule, idx) => {
-                        const isAlreadySelected = moduleSelectedRules.includes(rule)
-                        
-                        return (
-                          <button
-                            key={idx}
-                            onClick={() => handleAddRecommendedRule(rule)}
-                            disabled={isAlreadySelected}
-                            className={`flex items-start gap-2 p-2 rounded-md border text-left transition-colors ${
-                              isAlreadySelected
-                                ? 'bg-primary/5 border-primary/10 opacity-50 cursor-not-allowed'
-                                : 'bg-secondary/30 border-primary/20 hover:bg-primary/10 hover:border-primary/30 cursor-pointer'
-                            }`}
-                          >
-                            <CheckCircle2 className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${
-                              isAlreadySelected ? 'text-primary' : 'text-muted-foreground'
-                            }`} />
-                            <span className="text-xs text-muted-foreground">{rule}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
 
                 {/* Save and Reset Buttons */}
                 <div className="flex items-center justify-end gap-3 pt-4 border-t border-primary/20">

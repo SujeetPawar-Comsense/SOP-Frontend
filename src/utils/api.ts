@@ -494,6 +494,25 @@ export const businessRulesAPI = {
 
     if (error) throw error
     return { businessRules: data.config }
+  },
+
+  getByModule: async (projectId: string, moduleId: string) => {
+    // Fetch features for this module and extract business rules
+    const { data, error } = await supabase
+      .from('features')
+      .select('business_rules')
+      .eq('project_id', projectId)
+      .eq('module_id', moduleId)
+
+    if (error) throw error
+    
+    // Extract unique business rules from features
+    const rules = (data || [])
+      .map((f: any) => f.business_rules)
+      .filter((rule: string) => rule && rule.trim() !== '')
+      .filter((rule: string, index: number, self: string[]) => self.indexOf(rule) === index) // Remove duplicates
+    
+    return { businessRules: rules }
   }
 }
 
