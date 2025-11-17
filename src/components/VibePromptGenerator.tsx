@@ -80,7 +80,14 @@ export default function VibePromptGenerator({ projectId, projectName, applicatio
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [ragInitialized, setRagInitialized] = useState(false)
+  const [ragInitializing, setRagInitializing] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+
+  // Initialize RAG on component mount
+  useEffect(() => {
+    initializeRAGSystem()
+  }, [projectId])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -136,11 +143,48 @@ export default function VibePromptGenerator({ projectId, projectName, applicatio
     }
   }
 
-  const generateAIResponse = async (question: string): Promise<string> => {
-    // This is a placeholder - you can integrate with an actual AI chat API
-    // For now, we'll generate a context-aware prompt and return a helpful response
+  const initializeRAGSystem = async () => {
+    if (ragInitialized || ragInitializing) {
+      console.log('RAG already initialized or initializing, skipping')
+      return
+    }
+    
+    console.log('Starting RAG initialization for project:', projectId)
+    setRagInitializing(true)
     try {
-      // Try to generate a prompt based on the question category
+      await vibePromptsAPI.initializeRAG(projectId)
+      setRagInitialized(true)
+      console.log('RAG system initialized successfully')
+      toast.success('AI context loaded successfully')
+    } catch (error: any) {
+      console.error('Failed to initialize RAG:', error)
+      toast.error('Failed to initialize AI context. Using fallback mode.')
+      // Continue with fallback mode
+    } finally {
+      setRagInitializing(false)
+    }
+  }
+
+  const generateAIResponse = async (question: string): Promise<string> => {
+    try {
+      console.log('Generating AI response. RAG initialized:', ragInitialized, 'Project ID:', projectId)
+      
+      // Try to use RAG if initialized
+      if (ragInitialized) {
+        try {
+          console.log('Querying RAG with question:', question)
+          const answer = await vibePromptsAPI.queryRAG(projectId, question)
+          console.log('RAG response received:', answer)
+          return answer
+        } catch (ragError: any) {
+          console.error('RAG query failed, falling back to basic response:', ragError)
+          // Fall through to fallback response
+        }
+      } else {
+        console.log('RAG not initialized, using fallback responses')
+      }
+
+      // Fallback to basic responses if RAG is not available
       const questionLower = question.toLowerCase()
       
       if (questionLower.includes('design') || questionLower.includes('color') || questionLower.includes('font')) {
@@ -200,9 +244,9 @@ export default function VibePromptGenerator({ projectId, projectName, applicatio
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Badge className="bg-green-500/20 text-green-400 border-green-500/30 flex items-center gap-1.5">
-            <Circle className="h-2 w-2 fill-green-400" />
-            Online
+          <Badge className={`${ragInitialized ? 'bg-green-500/20 text-green-400 border-green-500/30' : ragInitializing ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : 'bg-gray-500/20 text-gray-400 border-gray-500/30'} flex items-center gap-1.5`}>
+            <Circle className={`h-2 w-2 ${ragInitialized ? 'fill-green-400' : ragInitializing ? 'fill-yellow-400' : 'fill-gray-400'}`} />
+            {ragInitializing ? 'Initializing...' : ragInitialized ? 'RAG Active' : 'Basic Mode'}
           </Badge>
           <Button
             variant="ghost"

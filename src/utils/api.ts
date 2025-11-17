@@ -826,6 +826,65 @@ export const vibePromptsAPI = {
     return result
   },
 
+  // RAG API methods
+  initializeRAG: async (projectId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/rag/initialize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ projectId })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to initialize RAG')
+    }
+
+    return await response.json()
+  },
+
+  queryRAG: async (projectId: string, question: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/rag/query`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ projectId, question })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to query RAG')
+    }
+
+    const result = await response.json()
+    return result.answer
+  },
+
+  checkRAGHealth: async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/rag/health`, {
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    })
+
+    if (!response.ok) return false
+    const result = await response.json()
+    return result.healthy
+  },
+
   saveImplementation: async (promptId: string, implementationCode: string, developerNotes?: string) => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw new Error('Not authenticated')
