@@ -8,6 +8,7 @@ import ProjectInformationForm, { ProjectInformation, createDefaultProjectInforma
 import { UserStory } from './UserStoriesEditor'
 import ModulesTable from './ModulesTableSimple'
 import UserStoriesAndFeatures from './UserStoriesAndFeatures'
+import UserStoriesTable from './UserStoriesTable'
 import { ModuleFeature } from './ExcelUtils'
 import { FeatureTask } from './FeaturesTasksEditor'
 import BusinessRulesEditor from './BusinessRulesEditor'
@@ -351,7 +352,14 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       // Load user stories
       const userStoriesResponse = await apiClient.get(`/projects/${projectId}/user-stories`)
       if (userStoriesResponse.userStories) {
-        setUserStories(userStoriesResponse.userStories)
+        // Normalize user stories to ensure userRole and acceptanceCriteria are properly set
+        const normalizedUserStories = userStoriesResponse.userStories.map((s: any) => ({
+          ...s,
+          userRole: s.userRole || s.user_role || '',
+          acceptanceCriteria: s.acceptanceCriteria || s.acceptance_criteria || '',
+          moduleId: s.moduleId || s.module_id || null
+        }))
+        setUserStories(normalizedUserStories)
       }
 
       // Load features/tasks
@@ -917,67 +925,12 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         )}
 
         {activeSection === 'userStoriesFeatures' && (
-          <UserStoriesAndFeatures
-            modules={modules}
+          <UserStoriesTable
             userStories={userStories}
+            modules={modules}
             features={features}
             projectId={projectId}
-            onUserStoryEdit={(story) => {
-              // Create a copy of the story and update it
-              const updatedStories = userStories.map(s => 
-                s.id === story.id ? story : s
-              )
-              saveUserStories(updatedStories)
-            }}
-            onFeatureEdit={(feature) => {
-              // Create a copy of the feature and update it
-              const updatedFeatures = features.map(f => 
-                f.id === feature.id ? feature : f
-              )
-              saveFeatures(updatedFeatures)
-            }}
-            onUserStoryDelete={(storyId) => {
-              const updatedStories = userStories.filter(s => s.id !== storyId)
-              saveUserStories(updatedStories)
-            }}
-            onFeatureDelete={(featureId) => {
-              const updatedFeatures = features.filter(f => f.id !== featureId)
-              saveFeatures(updatedFeatures)
-            }}
-            onAddUserStory={(moduleId) => {
-              // Create a new user story for the module
-              const newStory: UserStory = {
-                id: crypto.randomUUID(),
-                title: 'New User Story',
-                userRole: 'User',
-                description: '',
-                moduleId: moduleId,
-                acceptanceCriteria: [],
-                priority: 'Medium',
-                estimatedEffort: '',
-                status: 'Not Started'
-              }
-              saveUserStories([...userStories, newStory])
-            }}
-            onAddFeature={(userStoryId) => {
-              // Create a new feature for the user story
-              const userStory = userStories.find(s => s.id === userStoryId)
-              if (userStory) {
-                const newFeature: FeatureTask = {
-                  id: crypto.randomUUID(),
-                  title: 'New Feature',
-                  description: '',
-                  userStoryId: userStoryId,
-                  moduleId: userStory.moduleId,
-                  estimatedHours: 0,
-                  priority: 'Medium',
-                  status: 'Not Started'
-                }
-                console.log('Creating new feature:', newFeature)
-                saveFeatures([...features, newFeature])
-              }
-            }}
-            readOnly={userRole === 'viewer'}
+            onChange={saveUserStories}
           />
         )}
 
