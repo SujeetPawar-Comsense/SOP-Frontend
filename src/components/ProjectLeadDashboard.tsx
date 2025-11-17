@@ -359,12 +359,19 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       const featuresResponse = await apiClient.get(`/projects/${projectId}/features`)
       console.log('Features response:', featuresResponse)
       if (featuresResponse.features) {
-        setFeatures(featuresResponse.features)
-        console.log('Features set:', featuresResponse.features)
-        console.log('Number of features loaded:', featuresResponse.features.length)
-        console.log('Features with userStoryId:', featuresResponse.features.map((f: any) => ({ 
+        // Normalize features to ensure userStoryId is properly set
+        const normalizedFeatures = featuresResponse.features.map((f: any) => ({
+          ...f,
+          userStoryId: f.userStoryId || f.user_story_id || null, // Handle both camelCase and snake_case
+          moduleId: f.moduleId || f.module_id || null
+        }))
+        setFeatures(normalizedFeatures)
+        console.log('Features set:', normalizedFeatures)
+        console.log('Number of features loaded:', normalizedFeatures.length)
+        console.log('Features with userStoryId:', normalizedFeatures.map((f: any) => ({ 
           id: f.id, 
           userStoryId: f.userStoryId, 
+          user_story_id: f.user_story_id,
           title: f.title 
         })))
       } else {

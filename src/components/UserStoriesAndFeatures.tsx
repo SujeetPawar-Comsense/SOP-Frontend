@@ -133,11 +133,15 @@ export default function UserStoriesAndFeatures({
   }
 
   const getUserStoryStats = (userStoryId: string) => {
-    const storyFeatures = features.filter(f => 
-      f.userStoryId === userStoryId || 
-      (f as any).user_story_id === userStoryId || // Check snake_case version too
-      String(f.userStoryId) === String(userStoryId) // Ensure string comparison
-    )
+    const storyFeatures = features.filter(f => {
+      // Normalize the feature's userStoryId
+      const featureUserStoryId = f.userStoryId || (f as any).user_story_id
+      // Compare both as strings to handle type mismatches
+      return featureUserStoryId && (
+        String(featureUserStoryId) === String(userStoryId) ||
+        featureUserStoryId === userStoryId
+      )
+    })
     const completedFeatures = storyFeatures.filter(f => f.status === 'Completed').length
     
     return {
@@ -195,19 +199,29 @@ export default function UserStoriesAndFeatures({
                 {/* User stories for this module */}
                 {moduleStories.map((userStory) => {
                   const isStoryExpanded = expandedUserStories.has(userStory.id)
+                  // Normalize feature filtering to handle both camelCase and snake_case
                   const storyFeatures = features.filter(f => {
-                    const match = f.userStoryId === userStory.id || 
-                                  (f as any).user_story_id === userStory.id || // Check snake_case version too
-                                  String(f.userStoryId) === String(userStory.id) // Ensure string comparison
+                    // Get the userStoryId from feature (handle both formats)
+                    const featureUserStoryId = f.userStoryId || (f as any).user_story_id
+                    // Compare both as strings to handle UUID/string type mismatches
+                    const match = featureUserStoryId && (
+                      String(featureUserStoryId) === String(userStory.id) ||
+                      featureUserStoryId === userStory.id
+                    )
                     if (match) {
-                      console.log(`✅ Feature ${f.id} matches story ${userStory.id}`)
+                      console.log(`✅ Feature ${f.id} (userStoryId: ${featureUserStoryId}) matches story ${userStory.id}`)
                     }
                     return match
                   })
                   console.log(`Features for story ${userStory.id}:`, storyFeatures.length, storyFeatures)
                   if (storyFeatures.length === 0 && features.length > 0) {
                     console.log(`⚠️ No features found for story ${userStory.id}, but ${features.length} total features exist`)
-                    console.log('Sample feature:', features[0])
+                    console.log('All feature userStoryIds:', features.map(f => ({
+                      id: f.id,
+                      userStoryId: f.userStoryId || (f as any).user_story_id,
+                      title: f.title
+                    })))
+                    console.log('Story ID:', userStory.id, 'Type:', typeof userStory.id)
                   }
                   const storyStats = getUserStoryStats(userStory.id)
                   const isStorySelected = selectedUserStory === userStory.id
