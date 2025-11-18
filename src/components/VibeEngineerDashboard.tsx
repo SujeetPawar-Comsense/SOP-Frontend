@@ -34,7 +34,15 @@ interface Feature {
   title?: string
   description?: string
   moduleId?: string
+  module_id?: string
   userStoryId?: string
+  user_story_id?: string
+  priority?: string
+  status?: string
+  business_impact?: string
+  businessImpact?: string
+  dependencies?: string
+  estimated_hours?: number
 }
 
 interface ModuleImplementation {
@@ -51,6 +59,7 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
   const [selectedModules, setSelectedModules] = useState<Set<string>>(new Set())
   const [selectedModule, setSelectedModule] = useState<Module | null>(null)
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null)
+  const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set())
   const [features, setFeatures] = useState<Feature[]>([])
   const [currentPromptId, setCurrentPromptId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -103,15 +112,39 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
     }
   }
 
-  const loadModuleDetails = async (module: Module) => {
-    setSelectedModule(module)
-    // Filter features for this module
-    const moduleFeatures = features.filter(f => f.moduleId === module.id)
-    // Features are already loaded, just set the selected module
+
+  // Get features for selected modules
+  const getFeaturesForSelectedModules = useMemo(() => {
+    if (selectedModules.size === 0) return []
+    return features.filter(f => {
+      const moduleId = f.moduleId || f.module_id
+      return moduleId && selectedModules.has(moduleId)
+    })
+  }, [features, selectedModules])
+
+  const handleFeatureToggle = (featureId: string) => {
+    const newSelected = new Set(selectedFeatures)
+    if (newSelected.has(featureId)) {
+      newSelected.delete(featureId)
+    } else {
+      newSelected.add(featureId)
+    }
+    setSelectedFeatures(newSelected)
+  }
+
+  const handleSelectAllFeatures = (checked: boolean) => {
+    if (checked) {
+      setSelectedFeatures(new Set(getFeaturesForSelectedModules.map(f => f.id)))
+    } else {
+      setSelectedFeatures(new Set())
+    }
   }
 
   const handleGeneratePrompt = async (layer: string) => {
-    if (!selectedModule) return
+    if (selectedModules.size === 0) {
+      toast.error('Please select at least one module')
+      return
+    }
     
     setGeneratingPrompt(true)
     try {
@@ -128,13 +161,17 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
 
       const developmentType = layerMap[layer] || 'UI Components'
 
-      // Generate prompt with selected module and feature
+      // Pass all selected modules and features
+      const selectedModuleIds: string[] = Array.from(selectedModules)
+      const selectedFeatureIds: string[] = Array.from(selectedFeatures)
+
+      // Generate prompt with all selected modules and features
       const prompt = await vibePromptsAPI.generate(
         projectId, 
         developmentType,
         [], // previousOutputs will be fetched by backend
-        selectedModule.id,
-        selectedFeature?.id
+        selectedModuleIds,
+        selectedFeatureIds
       )
 
       setGeneratedPrompt(prompt.generatedPrompt || prompt.prompt?.generated_prompt || '')
@@ -180,9 +217,6 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
     toast.success('Prompt copied to clipboard!')
   }
 
-  const handleModuleClick = (module: Module) => {
-    loadModuleDetails(module)
-  }
 
   // Normalize module data
   const normalizedModules = useMemo(() => {
@@ -429,27 +463,17 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
               {paginatedModules.map((module) => {
                 const isSelected = selectedModules.has(module.id)
-                const isActiveModule = selectedModule?.id === module.id
                 return (
                   <Card
                     key={module.id}
                     className={`cursor-pointer transition-all border-2 ${
-                      isActiveModule
+                      isSelected
                         ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                        : isSelected
-                        ? 'border-primary bg-primary/5'
                         : 'border-primary/20 bg-card/50 hover:border-primary/40'
                     }`}
                     onClick={(e) => {
                       e.stopPropagation()
-                      const clickedModule = normalizedModules.find(m => m.id === module.id) || module
-                      if (selectedModule?.id === clickedModule.id) {
-                        // Deselect if clicking the same module
-                        setSelectedModule(null)
-                      } else {
-                        // Select the clicked module
-                        handleModuleClick(clickedModule)
-                      }
+                      handleModuleToggle(module.id)
                     }}
                   >
                     <CardContent className="p-4">
@@ -531,119 +555,171 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
             </div>
           )}
 
-            {/* Call to Action - Only show when no module is selected */}
-            {!selectedModule && (
+            {/* Call to Action - Only show when no modules are selected */}
+            {selectedModules.size === 0 && (
               <Card className="border-primary/20 bg-gradient-to-r from-primary/10 to-primary/5">
                 <CardContent className="p-8 text-center">
                   <div className="flex items-center justify-center gap-3 mb-4">
                     <Zap className="h-8 w-8 text-primary" />
                     <h3 className="text-xl font-bold text-foreground">
-                      Select a Feature to Get Started
+                      Select Modules to View Features
                     </h3>
                   </div>
                   <p className="text-muted-foreground max-w-2xl mx-auto">
-                    Choose a feature from the grid above to access AI prompts, implementation tools, and tracking
+                    Click on modules from the grid above to view and select their features
                   </p>
                 </CardContent>
               </Card>
             )}
 
-            {/* Selected Module Features Section */}
-            {selectedModule && (
-              <div className="mt-8 space-y-6">
-                {/* Module Header */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-foreground mb-1">
-                      {selectedModule.module_name || selectedModule.moduleName || 'Selected Module'}
-                    </h2>
-                    <p className="text-muted-foreground">
-                      {selectedModule.description || 'Module description'}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setSelectedModule(null)
-                      setGeneratedPrompt('')
-                      setSelectedLayer('ui-components')
-                    }}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Close
-                  </Button>
-                </div>
+            {/* Features Section for Selected Modules - Grouped by Module */}
+            {selectedModules.size > 0 && (
+              <div className="mt-8 space-y-8">
+                {Array.from(selectedModules).map((moduleId) => {
+                  const module = modules.find(m => m.id === moduleId)
+                  if (!module) return null
+                  
+                  const moduleFeatures = features.filter(f => {
+                    const fModuleId = f.moduleId || f.module_id
+                    return fModuleId === moduleId
+                  })
+                  
+                  const moduleName = module.module_name || module.moduleName || 'Unnamed Module'
+                  const moduleDescription = module.description || ''
+                  const modulePriority = module.priority || 'Medium'
+                  const moduleDependencies = module.dependencies || 'None'
+                  const moduleBusinessImpact = module.business_impact || module.businessImpact || 'Not specified'
+                  const moduleStatus = module.status || 'Not Started'
+                  
+                  return (
+                    <Card key={moduleId} className="border-2 border-primary/30 bg-card/50">
+                      <CardContent className="p-6">
+                        {/* Module Header */}
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <h2 className="text-2xl font-bold text-primary mb-2">
+                              {moduleName}
+                            </h2>
+                            <p className="text-sm text-muted-foreground mb-4">
+                              {moduleDescription}
+                            </p>
+                          </div>
+                          <Select defaultValue={moduleStatus}>
+                            <SelectTrigger className="w-[120px] border-primary/20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Not Started">Not Started</SelectItem>
+                              <SelectItem value="In Progress">In Progress</SelectItem>
+                              <SelectItem value="Completed">Completed</SelectItem>
+                              <SelectItem value="On Hold">On Hold</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
 
-                {/* Module Overview */}
-                <Card className="border-primary/20 bg-card/50">
-                  <CardContent className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <span className="text-sm text-muted-foreground">Priority:</span>
-                        <Badge variant={getPriorityBadgeVariant(selectedModule.priority || 'Medium')} className="ml-2">
-                          {selectedModule.priority || 'Medium'}
-                        </Badge>
-                      </div>
-                      <div>
-                        <span className="text-sm text-muted-foreground">Status:</span>
-                        <Badge variant={getPriorityBadgeVariant(selectedModule.priority || 'Medium')} className="ml-2">
-                          {selectedModule.status || 'Not Started'}
-                        </Badge>
-                      </div>
-                      <div>
-                        <span className="text-sm text-muted-foreground">Dependencies:</span>
-                        <p className="text-sm mt-1">{selectedModule.dependencies || 'None'}</p>
-                      </div>
-                      <div className="md:col-span-3">
-                        <span className="text-sm text-muted-foreground">Business Impact:</span>
-                        <p className="text-sm mt-1">{selectedModule.business_impact || selectedModule.businessImpact || 'Not specified'}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                        {/* Module Details */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 pb-6 border-b border-primary/20">
+                          <div>
+                            <span className="text-xs text-muted-foreground">Priority:</span>
+                            <p className="text-sm font-semibold text-foreground mt-1">
+                              <Badge variant={getPriorityBadgeVariant(modulePriority)}>
+                                {modulePriority}
+                              </Badge>
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-xs text-muted-foreground">Dependencies:</span>
+                            <p className="text-sm font-semibold text-foreground mt-1">
+                              {moduleDependencies}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-xs text-muted-foreground">Business Impact:</span>
+                            <p className="text-sm font-semibold text-foreground mt-1">
+                              {moduleBusinessImpact}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-xs text-muted-foreground">Original Status:</span>
+                            <p className="text-sm font-semibold text-foreground mt-1">
+                              {moduleStatus}
+                            </p>
+                          </div>
+                        </div>
 
-                {/* Recommended Features */}
-                <Card className="border-primary/20 bg-card/50">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Sparkles className="h-5 w-5 text-primary" />
-                      <h3 className="font-semibold text-lg">
-                        Recommended Features ({features.filter(f => f.moduleId === selectedModule.id).length})
-                      </h3>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {features.filter(f => f.moduleId === selectedModule.id).length > 0 ? (
-                        features.filter(f => f.moduleId === selectedModule.id).map((feature) => {
-                          const isSelected = selectedFeature?.id === feature.id
-                          return (
-                            <div
-                              key={feature.id}
-                              onClick={() => setSelectedFeature(isSelected ? null : feature)}
-                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
-                                isSelected
-                                  ? 'bg-primary/20 border-primary shadow-lg shadow-primary/20'
-                                  : 'bg-primary/10 border-primary/20 hover:border-primary/40'
-                              }`}
-                            >
-                              <CheckCircle2 className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-primary/60'}`} />
-                              <span className={`text-sm ${isSelected ? 'font-semibold' : ''}`}>
-                                {feature.title || 'Untitled Feature'}
-                              </span>
+                        {/* Recommended Features Header */}
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <Zap className="h-5 w-5 text-primary" />
+                            <h3 className="text-lg font-semibold text-primary">
+                              Recommended Features ({moduleFeatures.length})
+                            </h3>
+                          </div>
+                          {moduleFeatures.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id={`select-all-${moduleId}`}
+                                checked={moduleFeatures.length > 0 && moduleFeatures.every(f => selectedFeatures.has(f.id))}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    const newSelected = new Set(selectedFeatures)
+                                    moduleFeatures.forEach(f => newSelected.add(f.id))
+                                    setSelectedFeatures(newSelected)
+                                  } else {
+                                    const newSelected = new Set(selectedFeatures)
+                                    moduleFeatures.forEach(f => newSelected.delete(f.id))
+                                    setSelectedFeatures(newSelected)
+                                  }
+                                }}
+                              />
+                              <Label htmlFor={`select-all-${moduleId}`} className="text-sm font-medium cursor-pointer">
+                                Select All
+                              </Label>
                             </div>
-                          )
-                        })
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          No features available for this module
-                        </p>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                          )}
+                        </div>
+
+                        {/* Features Grid */}
+                        {moduleFeatures.length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {moduleFeatures.map((feature) => {
+                              const isSelected = selectedFeatures.has(feature.id)
+                              return (
+                                <div
+                                  key={feature.id}
+                                  className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer ${
+                                    isSelected
+                                      ? 'border-primary bg-primary/10'
+                                      : 'border-primary/20 bg-card/30 hover:border-primary/40'
+                                  }`}
+                                  onClick={() => handleFeatureToggle(feature.id)}
+                                >
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => handleFeatureToggle(feature.id)}
+                                    className="border-primary"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <span className="text-sm font-medium text-foreground flex-1">
+                                    {feature.title || 'Untitled Feature'}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            No features available for this module
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )
+                })}
 
                 {/* AI Prompt Generator & Implementation Output */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+                {selectedModules.size > 0 && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
                   {/* Left: AI Prompt Generator */}
                   <div className="space-y-4">
                     <div>
@@ -705,7 +781,9 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                             </p>
                           </div>
                           <Badge variant="outline" className="border-green-500/30 text-green-400">
-                            {selectedModule?.priority || 'High'}
+                            {selectedModules.size > 0 
+                              ? modules.find(m => m.id === Array.from(selectedModules)[0])?.priority || 'High'
+                              : 'High'}
                           </Badge>
                         </div>
                       </CardContent>
@@ -755,7 +833,7 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                     {/* Generate Code Button */}
                     <Button
                       onClick={() => handleGeneratePrompt(selectedLayer)}
-                      disabled={generatingPrompt || !selectedModule}
+                      disabled={generatingPrompt || selectedModules.size === 0}
                       className="w-full bg-green-500 hover:bg-green-600 text-white"
                       size="lg"
                     >
@@ -836,6 +914,7 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                     </div>
                   </div>
                 </div>
+                )}
               </div>
             )}
         </TabsContent>

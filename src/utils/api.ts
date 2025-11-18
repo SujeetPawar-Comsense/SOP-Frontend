@@ -796,8 +796,8 @@ export const vibePromptsAPI = {
     projectId: string, 
     developmentType: DevelopmentType | string, 
     previousOutputs: string[] = [],
-    selectedModuleId?: string,
-    selectedFeatureId?: string
+    selectedModuleIds?: string[],
+    selectedFeatureIds?: string[]
   ) => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw new Error('Not authenticated')
@@ -812,8 +812,8 @@ export const vibePromptsAPI = {
         projectId,
         developmentType,
         previousOutputs,
-        selectedModuleId,
-        selectedFeatureId
+        selectedModuleIds: selectedModuleIds || [],
+        selectedFeatureIds: selectedFeatureIds || []
       })
     })
 

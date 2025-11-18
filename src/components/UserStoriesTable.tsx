@@ -74,6 +74,26 @@ export default function UserStoriesTable({
     return criteria || ''
   }
 
+  // Helper function to get module name
+  const getModuleName = (moduleId: string | undefined): string => {
+    if (!moduleId) return 'No Module'
+    
+    // Try to find module by id, handling both exact match and string conversion
+    const module = modules.find(m => {
+      const mId = String(m.id || '')
+      const searchId = String(moduleId || '')
+      return mId === searchId || mId.toLowerCase() === searchId.toLowerCase()
+    })
+    
+    if (!module) {
+      return 'Unknown Module'
+    }
+    
+    // Handle both moduleName (camelCase) and module_name (snake_case) fields
+    // Modules from backend use module_name, frontend uses moduleName
+    return (module as any).moduleName || (module as any).module_name || 'Unknown Module'
+  }
+
   // Filter user stories
   const filteredStories = userStories.filter(story => {
     const userRole = getUserRole(story)
@@ -296,6 +316,12 @@ export default function UserStoriesTable({
                   </TableHead>
                   <TableHead className="text-primary font-semibold">
                     <div className="flex items-center gap-1">
+                      Module
+                      <ArrowUpDown className="w-3 h-3" />
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-primary font-semibold">
+                    <div className="flex items-center gap-1">
                       User/Role
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
@@ -329,6 +355,11 @@ export default function UserStoriesTable({
                           )}
                           {story.title}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/30">
+                          {getModuleName(story.moduleId || (story as any).module_id)}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
@@ -378,7 +409,7 @@ export default function UserStoriesTable({
                 })}
                 {filteredStories.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No user stories found. Create your first user story to get started.
                     </TableCell>
                   </TableRow>
