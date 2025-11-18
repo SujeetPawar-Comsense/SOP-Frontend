@@ -36,6 +36,7 @@ import { UserStory } from './UserStoriesEditor'
 import { ModuleFeature } from './ExcelUtils'
 import { FeatureTask } from './FeaturesTasksEditor'
 import AIGeneralEnhancement from './AIGeneralEnhancement'
+import AIUserStoriesEnhancement from './AIUserStoriesEnhancement'
 import { featuresAPI } from '../utils/api'
 
 interface UserStoriesTableProps {
@@ -273,14 +274,12 @@ export default function UserStoriesTable({
               <Button variant="outline" size="sm">
                 <Copy className="w-4 h-4 mr-2" />
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                className="bg-primary/10 hover:bg-primary/20 text-primary border-primary/30"
-              >
-                <Wand2 className="w-4 h-4 mr-2" />
-                AI Magic
-              </Button>
+              <AIUserStoriesEnhancement
+                userStories={userStories}
+                modules={modules}
+                projectId={projectId}
+                onEnhanced={onChange}
+              />
             </div>
           </div>
         </CardHeader>
