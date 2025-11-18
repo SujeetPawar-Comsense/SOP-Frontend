@@ -7,7 +7,7 @@ import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Checkbox } from './ui/checkbox'
 import { Label } from './ui/label'
-import { Loader2, Book, Search, Zap, ChevronLeft, ChevronRight, Code2, Sparkles, ArrowLeft, Copy, FileText, ChevronDown, CheckCircle2, FileCode, ArrowUp, Calendar, Database, Percent, Image, Shield, CheckSquare } from 'lucide-react'
+import { Loader2, Book, Search, Zap, ChevronLeft, ChevronRight, Code2, Sparkles, ArrowLeft, Copy, FileText, ChevronDown, CheckCircle2, FileCode, ArrowUp, Calendar, Database, Percent, Image, Shield, CheckSquare, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { modulesAPI, projectAPI, featuresAPI, vibePromptsAPI, userStoriesAPI, businessRulesAPI } from '../utils/api'
 import VibePromptGenerator from './VibePromptGenerator'
@@ -60,6 +60,8 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
   const [selectedModule, setSelectedModule] = useState<Module | null>(null)
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null)
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set())
+  const [selectedUserStories, setSelectedUserStories] = useState<Set<string>>(new Set())
+  const [selectedBusinessRules, setSelectedBusinessRules] = useState<Set<string>>(new Set())
   const [features, setFeatures] = useState<Feature[]>([])
   const [userStories, setUserStories] = useState<any[]>([])
   const [businessRules, setBusinessRules] = useState<any>(null)
@@ -115,8 +117,12 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
 
       // Load business rules
       const businessRulesResponse = await businessRulesAPI.get(projectId)
+      console.log('Business rules response:', businessRulesResponse)
       if (businessRulesResponse.businessRules) {
         setBusinessRules(businessRulesResponse.businessRules)
+      } else if (businessRulesResponse) {
+        // Handle if the response is the business rules object directly
+        setBusinessRules(businessRulesResponse)
       }
     } catch (error: any) {
       console.error('Failed to load project data:', error)
@@ -175,11 +181,21 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
 
       const developmentType = layerMap[layer] || 'UI Components'
 
-      // Pass all selected modules and features
+      // Pass all selected content
       const selectedModuleIds: string[] = Array.from(selectedModules)
       const selectedFeatureIds: string[] = Array.from(selectedFeatures)
+      const selectedUserStoryIds: string[] = Array.from(selectedUserStories)
+      const selectedBusinessRuleIds: string[] = Array.from(selectedBusinessRules)
 
-      // Generate prompt with all selected modules and features
+      // Log selected content for debugging
+      console.log('Generating prompt with:', {
+        modules: selectedModuleIds,
+        features: selectedFeatureIds,
+        userStories: selectedUserStoryIds,
+        businessRules: selectedBusinessRuleIds
+      })
+
+      // Generate prompt with all selected content
       const prompt = await vibePromptsAPI.generate(
         projectId, 
         developmentType,
@@ -459,6 +475,97 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
               </div>
             </div>
 
+            {/* Selection Summary Bar */}
+            {(selectedModules.size > 0 || selectedUserStories.size > 0 || selectedBusinessRules.size > 0 || selectedFeatures.size > 0) && (
+              <div className="mb-4 p-4 rounded-lg bg-primary/5 border border-primary/20">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold">Current Selection</h3>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSelectedModules(new Set())
+                      setSelectedUserStories(new Set())
+                      setSelectedBusinessRules(new Set())
+                      setSelectedFeatures(new Set())
+                    }}
+                    className="text-xs h-7"
+                  >
+                    Clear All Selections
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">
+                      <span className="font-medium">{selectedModules.size}</span> Modules
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Book className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm">
+                      <span className="font-medium">{selectedUserStories.size}</span> User Stories
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-purple-500" />
+                    <span className="text-sm">
+                      <span className="font-medium">{selectedBusinessRules.size}</span> Business Rules
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-primary" />
+                    <span className="text-sm">
+                      <span className="font-medium">{selectedFeatures.size}</span> Features
+                    </span>
+                  </div>
+                </div>
+                {(selectedModules.size > 0 || selectedUserStories.size > 0 || selectedBusinessRules.size > 0 || selectedFeatures.size > 0) && (
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-primary/10">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                      onClick={() => {
+                        console.log('Export selection:', {
+                          modules: Array.from(selectedModules),
+                          userStories: Array.from(selectedUserStories),
+                          businessRules: Array.from(selectedBusinessRules),
+                          features: Array.from(selectedFeatures)
+                        })
+                        toast.success('Selection exported to console')
+                      }}
+                    >
+                      <FileText className="h-3 w-3 mr-1" />
+                      Export Selection
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="text-xs bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => {
+                        // Scroll to AI Prompt Generator section
+                        const promptSection = document.querySelector('#ai-prompt-generator')
+                        if (promptSection) {
+                          promptSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }
+                        
+                        console.log('Generate prompt for selection:', {
+                          modules: Array.from(selectedModules),
+                          userStories: Array.from(selectedUserStories),
+                          businessRules: Array.from(selectedBusinessRules),
+                          features: Array.from(selectedFeatures)
+                        })
+                        toast.success('Ready to generate AI prompt with selected content!')
+                      }}
+                    >
+                      <Sparkles className="h-3 w-3 mr-1" />
+                      Generate AI Prompt
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Select All Checkbox */}
             <div className="mb-4">
               <div className="flex items-center gap-2">
@@ -468,7 +575,7 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                   onCheckedChange={handleSelectAll}
                 />
                 <Label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
-                  Select All
+                  Select All Modules
                 </Label>
               </div>
             </div>
@@ -686,31 +793,88 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                           if (moduleUserStories.length > 0) {
                             return (
                               <>
-                                <div className="flex items-center gap-2 mb-4">
-                                  <Book className="h-5 w-5 text-blue-500" />
-                                  <h3 className="text-lg font-semibold text-blue-500">
-                                    User Stories ({moduleUserStories.length})
-                                  </h3>
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="flex items-center gap-2">
+                                    <Book className="h-5 w-5 text-blue-500" />
+                                    <h3 className="text-lg font-semibold text-blue-500">
+                                      User Stories ({moduleUserStories.length})
+                                    </h3>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground">
+                                      {moduleUserStories.filter(s => selectedUserStories.has(s.id)).length} selected
+                                    </span>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        const allSelected = moduleUserStories.every(s => selectedUserStories.has(s.id))
+                                        if (allSelected) {
+                                          // Deselect all
+                                          const newSelected = new Set(selectedUserStories)
+                                          moduleUserStories.forEach(s => newSelected.delete(s.id))
+                                          setSelectedUserStories(newSelected)
+                                        } else {
+                                          // Select all
+                                          const newSelected = new Set(selectedUserStories)
+                                          moduleUserStories.forEach(s => newSelected.add(s.id))
+                                          setSelectedUserStories(newSelected)
+                                        }
+                                      }}
+                                      className="text-xs h-7"
+                                    >
+                                      {moduleUserStories.every(s => selectedUserStories.has(s.id)) ? 'Deselect All' : 'Select All'}
+                                    </Button>
+                                  </div>
                                 </div>
                                 <div className="grid grid-cols-1 gap-3 mb-6">
-                                  {moduleUserStories.map((story) => (
-                                    <div key={story.id} className="p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
-                                      <div className="flex items-start justify-between mb-2">
-                                        <h4 className="font-medium text-sm">{story.title}</h4>
-                                        <Badge variant="outline" className="text-xs">
-                                          {story.priority || 'Medium'}
-                                        </Badge>
+                                  {moduleUserStories.map((story) => {
+                                    const isSelected = selectedUserStories.has(story.id)
+                                    return (
+                                      <div 
+                                        key={story.id} 
+                                        className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                                          isSelected 
+                                            ? 'border-blue-500/40 bg-blue-500/10' 
+                                            : 'border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10'
+                                        }`}
+                                        onClick={() => {
+                                          const newSelected = new Set(selectedUserStories)
+                                          if (isSelected) {
+                                            newSelected.delete(story.id)
+                                          } else {
+                                            newSelected.add(story.id)
+                                          }
+                                          setSelectedUserStories(newSelected)
+                                        }}
+                                      >
+                                        <div className="flex items-start gap-3">
+                                          <Checkbox
+                                            checked={isSelected}
+                                            onCheckedChange={() => {}}
+                                            className="mt-0.5"
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                          <div className="flex-1">
+                                            <div className="flex items-start justify-between mb-2">
+                                              <h4 className="font-medium text-sm">{story.title}</h4>
+                                              <Badge variant="outline" className="text-xs">
+                                                {story.priority || 'Medium'}
+                                              </Badge>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground mb-2">
+                                              As a {story.user_role || story.userRole}, {story.description}
+                                            </p>
+                                            {story.acceptance_criteria && (
+                                              <p className="text-xs text-muted-foreground">
+                                                <span className="font-semibold">Acceptance Criteria:</span> {story.acceptance_criteria}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
                                       </div>
-                                      <p className="text-xs text-muted-foreground mb-2">
-                                        As a {story.user_role || story.userRole}, {story.description}
-                                      </p>
-                                      {story.acceptance_criteria && (
-                                        <p className="text-xs text-muted-foreground">
-                                          <span className="font-semibold">Acceptance Criteria:</span> {story.acceptance_criteria}
-                                        </p>
-                                      )}
-                                    </div>
-                                  ))}
+                                    )
+                                  })}
                                 </div>
                               </>
                             )
@@ -820,31 +984,85 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                           if (rulesToShow.length > 0) {
                             return (
                               <>
-                                <div className="flex items-center gap-2 mb-4">
-                                  <Shield className="h-5 w-5 text-purple-500" />
-                                  <h3 className="text-lg font-semibold text-purple-500">
-                                    Business Rules ({rulesToShow.length})
-                                    {moduleBusinessRules.length === 0 && allRules.length > 0 && (
-                                      <span className="text-xs text-muted-foreground ml-2">(Showing all project rules)</span>
-                                    )}
-                                  </h3>
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="flex items-center gap-2">
+                                    <Shield className="h-5 w-5 text-purple-500" />
+                                    <h3 className="text-lg font-semibold text-purple-500">
+                                      Business Rules ({rulesToShow.length})
+                                      {moduleBusinessRules.length === 0 && allRules.length > 0 && (
+                                        <span className="text-xs text-muted-foreground ml-2">(Showing all project rules)</span>
+                                      )}
+                                    </h3>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground">
+                                      {rulesToShow.filter((_, idx) => selectedBusinessRules.has(`${moduleId}-rule-${idx}`)).length} selected
+                                    </span>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        const allSelected = rulesToShow.every((_, idx) => selectedBusinessRules.has(`${moduleId}-rule-${idx}`))
+                                        const newSelected = new Set(selectedBusinessRules)
+                                        if (allSelected) {
+                                          // Deselect all
+                                          rulesToShow.forEach((_, idx) => newSelected.delete(`${moduleId}-rule-${idx}`))
+                                        } else {
+                                          // Select all
+                                          rulesToShow.forEach((_, idx) => newSelected.add(`${moduleId}-rule-${idx}`))
+                                        }
+                                        setSelectedBusinessRules(newSelected)
+                                      }}
+                                      className="text-xs h-7"
+                                    >
+                                      {rulesToShow.every((_, idx) => selectedBusinessRules.has(`${moduleId}-rule-${idx}`)) ? 'Deselect All' : 'Select All'}
+                                    </Button>
+                                  </div>
                                 </div>
                                 <div className="grid grid-cols-1 gap-3 mb-6">
-                                  {rulesToShow.map((rule, index) => (
-                                    <div key={index} className="p-3 rounded-lg border border-purple-500/20 bg-purple-500/5">
-                                      <div className="flex items-start gap-2">
-                                        <Shield className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
-                                        <div className="flex-1">
-                                          <div className="flex items-center gap-2 mb-1">
-                                            <span className="text-xs font-semibold text-purple-500">{rule.category}</span>
-                                            <span className="text-xs text-muted-foreground">•</span>
-                                            <span className="text-xs text-muted-foreground">{rule.subcategory}</span>
+                                  {rulesToShow.map((rule, index) => {
+                                    const ruleId = `${moduleId}-rule-${index}`
+                                    const isSelected = selectedBusinessRules.has(ruleId)
+                                    return (
+                                      <div 
+                                        key={index} 
+                                        className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                                          isSelected 
+                                            ? 'border-purple-500/40 bg-purple-500/10' 
+                                            : 'border-purple-500/20 bg-purple-500/5 hover:bg-purple-500/10'
+                                        }`}
+                                        onClick={() => {
+                                          const newSelected = new Set(selectedBusinessRules)
+                                          if (isSelected) {
+                                            newSelected.delete(ruleId)
+                                          } else {
+                                            newSelected.add(ruleId)
+                                          }
+                                          setSelectedBusinessRules(newSelected)
+                                        }}
+                                      >
+                                        <div className="flex items-start gap-3">
+                                          <Checkbox
+                                            checked={isSelected}
+                                            onCheckedChange={() => {}}
+                                            className="mt-0.5"
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                          <div className="flex items-start gap-2 flex-1">
+                                            <Shield className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                                            <div className="flex-1">
+                                              <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-xs font-semibold text-purple-500">{rule.category}</span>
+                                                <span className="text-xs text-muted-foreground">•</span>
+                                                <span className="text-xs text-muted-foreground">{rule.subcategory}</span>
+                                              </div>
+                                              <p className="text-sm">{rule.rule}</p>
+                                            </div>
                                           </div>
-                                          <p className="text-sm">{rule.rule}</p>
                                         </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    )
+                                  })}
                                 </div>
                               </>
                             )
@@ -924,13 +1142,80 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
 
                 {/* AI Prompt Generator & Implementation Output */}
                 {selectedModules.size > 0 && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+                  <div id="ai-prompt-generator" className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
                   {/* Left: AI Prompt Generator */}
                   <div className="space-y-4">
                     <div>
                       <h3 className="text-xl font-bold text-foreground mb-1">AI Prompt Generator</h3>
                       <p className="text-sm text-muted-foreground">Context-aware prompts for each layer</p>
                     </div>
+
+                    {/* Selected Content Summary */}
+                    {(selectedUserStories.size > 0 || selectedBusinessRules.size > 0 || selectedFeatures.size > 0) && (
+                      <Card className="border-green-500/20 bg-green-500/5">
+                        <CardContent className="p-4">
+                          <h4 className="font-semibold text-sm mb-3 text-green-600">Selected Content for AI Generation</h4>
+                          <div className="space-y-2">
+                            {selectedUserStories.size > 0 && (
+                              <div className="flex items-start gap-2">
+                                <Book className="h-4 w-4 text-blue-500 mt-0.5" />
+                                <div className="flex-1">
+                                  <span className="text-xs font-medium text-blue-600">{selectedUserStories.size} User Stories</span>
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {Array.from(selectedUserStories).slice(0, 3).map(storyId => {
+                                      const story = userStories.find(s => s.id === storyId)
+                                      if (!story) return null
+                                      return (
+                                        <Badge key={storyId} variant="outline" className="text-xs">
+                                          {story.title}
+                                        </Badge>
+                                      )
+                                    })}
+                                    {selectedUserStories.size > 3 && (
+                                      <Badge variant="outline" className="text-xs">
+                                        +{selectedUserStories.size - 3} more
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {selectedBusinessRules.size > 0 && (
+                              <div className="flex items-start gap-2">
+                                <Shield className="h-4 w-4 text-purple-500 mt-0.5" />
+                                <div className="flex-1">
+                                  <span className="text-xs font-medium text-purple-600">{selectedBusinessRules.size} Business Rules</span>
+                                </div>
+                              </div>
+                            )}
+                            {selectedFeatures.size > 0 && (
+                              <div className="flex items-start gap-2">
+                                <Zap className="h-4 w-4 text-primary mt-0.5" />
+                                <div className="flex-1">
+                                  <span className="text-xs font-medium text-primary">{selectedFeatures.size} Features</span>
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {Array.from(selectedFeatures).slice(0, 3).map(featureId => {
+                                      const feature = features.find(f => f.id === featureId)
+                                      if (!feature) return null
+                                      return (
+                                        <Badge key={featureId} variant="outline" className="text-xs">
+                                          {feature.title}
+                                        </Badge>
+                                      )
+                                    })}
+                                    {selectedFeatures.size > 3 && (
+                                      <Badge variant="outline" className="text-xs">
+                                        +{selectedFeatures.size - 3} more
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
 
                     {/* Prompt Type Selection */}
                     <div className="flex gap-2 flex-wrap">
