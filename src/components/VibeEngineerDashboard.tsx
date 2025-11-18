@@ -703,70 +703,115 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                         {(() => {
                           // Get business rules applicable to this module
                           const getModuleBusinessRules = () => {
-                            if (!businessRules) return []
+                            if (!businessRules || !businessRules.categories) {
+                              console.log('No business rules found:', businessRules)
+                              return []
+                            }
                             
                             const rules: Array<{category: string, subcategory: string, rule: string}> = []
                             const moduleName = module.module_name || module.moduleName
                             
-                            // Check if rules apply to all projects or this specific module
-                            if (businessRules.applyToAllProjects || 
-                                (businessRules.specificModules && businessRules.specificModules.includes(moduleId))) {
-                              
-                              // Get all defined rules from categories
-                              if (businessRules.categories) {
-                                businessRules.categories.forEach(category => {
-                                  // Check subcategories
-                                  if (category.subcategories) {
-                                    category.subcategories.forEach(sub => {
-                                      if (sub.userRule && sub.userRule.trim()) {
-                                        // Check if this rule applies to this module
-                                        const appliesTo = sub.applicableTo || []
-                                        if (appliesTo.length === 0 || appliesTo.includes(moduleName)) {
-                                          rules.push({
-                                            category: category.name,
-                                            subcategory: sub.name,
-                                            rule: sub.userRule
-                                          })
-                                        }
-                                      }
-                                    })
-                                  }
-                                  
-                                  // Check custom subcategories
-                                  if (category.customSubcategories) {
-                                    category.customSubcategories.forEach(sub => {
-                                      if (sub.userRule && sub.userRule.trim()) {
-                                        const appliesTo = sub.applicableTo || []
-                                        if (appliesTo.length === 0 || appliesTo.includes(moduleName)) {
-                                          rules.push({
-                                            category: category.name,
-                                            subcategory: sub.name,
-                                            rule: sub.userRule
-                                          })
-                                        }
-                                      }
-                                    })
+                            // Get all defined rules from categories
+                            businessRules.categories.forEach(category => {
+                              // Check subcategories
+                              if (category.subcategories) {
+                                category.subcategories.forEach(sub => {
+                                  if (sub.userRule && sub.userRule.trim()) {
+                                    // Check if this rule has specific module applicability
+                                    const appliesTo = sub.applicableTo || []
+                                    
+                                    // Include rule if:
+                                    // 1. No specific modules defined (applies to all)
+                                    // 2. This module is specifically listed
+                                    // 3. Business rules apply to all projects
+                                    if (appliesTo.length === 0 || 
+                                        appliesTo.includes(moduleName) || 
+                                        businessRules.applyToAllProjects) {
+                                      rules.push({
+                                        category: category.name,
+                                        subcategory: sub.name,
+                                        rule: sub.userRule
+                                      })
+                                    }
                                   }
                                 })
                               }
-                            }
+                              
+                              // Check custom subcategories
+                              if (category.customSubcategories) {
+                                category.customSubcategories.forEach(sub => {
+                                  if (sub.userRule && sub.userRule.trim()) {
+                                    const appliesTo = sub.applicableTo || []
+                                    
+                                    // Include rule if:
+                                    // 1. No specific modules defined (applies to all)
+                                    // 2. This module is specifically listed
+                                    // 3. Business rules apply to all projects
+                                    if (appliesTo.length === 0 || 
+                                        appliesTo.includes(moduleName) || 
+                                        businessRules.applyToAllProjects) {
+                                      rules.push({
+                                        category: category.name,
+                                        subcategory: sub.name,
+                                        rule: sub.userRule
+                                      })
+                                    }
+                                  }
+                                })
+                              }
+                            })
                             
+                            console.log('Module:', moduleName, 'Found rules:', rules.length, rules)
                             return rules
                           }
                           
                           const moduleBusinessRules = getModuleBusinessRules()
                           
-                          if (moduleBusinessRules.length > 0) {
+                          // If no specific rules found, show all rules as a fallback
+                          const allRules: Array<{category: string, subcategory: string, rule: string}> = []
+                          if (moduleBusinessRules.length === 0 && businessRules && businessRules.categories) {
+                            businessRules.categories.forEach(category => {
+                              if (category.subcategories) {
+                                category.subcategories.forEach(sub => {
+                                  if (sub.userRule && sub.userRule.trim()) {
+                                    allRules.push({
+                                      category: category.name,
+                                      subcategory: sub.name,
+                                      rule: sub.userRule
+                                    })
+                                  }
+                                })
+                              }
+                              if (category.customSubcategories) {
+                                category.customSubcategories.forEach(sub => {
+                                  if (sub.userRule && sub.userRule.trim()) {
+                                    allRules.push({
+                                      category: category.name,
+                                      subcategory: sub.name,
+                                      rule: sub.userRule
+                                    })
+                                  }
+                                })
+                              }
+                            })
+                          }
+                          
+                          const rulesToShow = moduleBusinessRules.length > 0 ? moduleBusinessRules : allRules
+                          
+                          if (rulesToShow.length > 0) {
                             return (
                               <>
                                 <div className="flex items-center gap-2 mb-4">
                                   <Shield className="h-5 w-5 text-purple-500" />
                                   <h3 className="text-lg font-semibold text-purple-500">
-                                    Business Rules ({moduleBusinessRules.length})
+                                    Business Rules ({rulesToShow.length})
+                                    {moduleBusinessRules.length === 0 && allRules.length > 0 && (
+                                      <span className="text-xs text-muted-foreground ml-2">(Showing all project rules)</span>
+                                    )}
                                   </h3>
                                 </div>
                                 <div className="grid grid-cols-1 gap-3 mb-6">
-                                  {moduleBusinessRules.map((rule, index) => (
+                                  {rulesToShow.map((rule, index) => (
                                     <div key={index} className="p-3 rounded-lg border border-purple-500/20 bg-purple-500/5">
                                       <div className="flex items-start gap-2">
                                         <Shield className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
