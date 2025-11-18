@@ -601,7 +601,26 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                   const moduleName = module.module_name || module.moduleName || 'Unnamed Module'
                   const moduleDescription = module.description || ''
                   const modulePriority = module.priority || 'Medium'
-                  const moduleDependencies = module.dependencies || 'None'
+                  const moduleDependencies = (() => {
+                    const deps = module.dependencies
+                    if (!deps) return 'None'
+                    if (typeof deps === 'string') {
+                      // Check if it's a JSON array string
+                      try {
+                        const parsed = JSON.parse(deps)
+                        if (Array.isArray(parsed)) {
+                          return parsed.join(', ')
+                        }
+                        return deps
+                      } catch {
+                        return deps
+                      }
+                    }
+                    if (Array.isArray(deps)) {
+                      return deps.join(', ')
+                    }
+                    return 'None'
+                  })()
                   const moduleBusinessImpact = module.business_impact || module.businessImpact || 'Not specified'
                   const moduleStatus = module.status || 'Not Started'
                   
@@ -1154,7 +1173,26 @@ function ModuleDetailView({
   const priority = module.priority || 'Medium'
   const status = module.status || 'Not Started'
   const businessImpact = module.business_impact || module.businessImpact || ''
-  const dependencies = module.dependencies || ''
+  const dependencies = (() => {
+    const deps = module.dependencies
+    if (!deps) return 'None'
+    if (typeof deps === 'string') {
+      // Check if it's a JSON array string
+      try {
+        const parsed = JSON.parse(deps)
+        if (Array.isArray(parsed)) {
+          return parsed.join(', ')
+        }
+        return deps
+      } catch {
+        return deps
+      }
+    }
+    if (Array.isArray(deps)) {
+      return deps.join(', ')
+    }
+    return 'None'
+  })()
 
   const layers = [
     { id: 'ui-components', label: 'UI Components', icon: FileCode },
