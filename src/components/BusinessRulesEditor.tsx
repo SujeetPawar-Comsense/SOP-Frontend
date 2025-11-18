@@ -13,14 +13,16 @@ import { toast } from 'sonner@2.0.3'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
 import { Checkbox } from './ui/checkbox'
+import AIBusinessRulesEnhancement from './AIBusinessRulesEnhancement'
 
 interface BusinessRulesEditorProps {
   config: BusinessRulesConfig
   onChange: (config: BusinessRulesConfig) => void
   availableModules?: Array<{ id: string; moduleName: string }>
+  projectId?: string
 }
 
-export default function BusinessRulesEditor({ config, onChange, availableModules = [] }: BusinessRulesEditorProps) {
+export default function BusinessRulesEditor({ config, onChange, availableModules = [], projectId }: BusinessRulesEditorProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [editingSubcategory, setEditingSubcategory] = useState<{ categoryId: string; subcategoryId: string } | null>(null)
   const [addingCustomSubcategory, setAddingCustomSubcategory] = useState<string | null>(null)
@@ -29,10 +31,6 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
   const [showModuleSelector, setShowModuleSelector] = useState<{ categoryId: string; subcategoryId: string; isCustom?: boolean } | null>(null)
   const [editingRuleText, setEditingRuleText] = useState<{ [key: string]: string }>({})
   const [selectedModulesInDialog, setSelectedModulesInDialog] = useState<Set<string>>(new Set())
-  
-  // AI Magic state
-  const [showAIMagicDialog, setShowAIMagicDialog] = useState(false)
-  const [aiMagicStage, setAIMagicStage] = useState(0)
 
   // Auto-expand categories that have defined rules
   useEffect(() => {
@@ -342,37 +340,6 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
     })
   }
 
-  // AI Magic stage progression
-  useEffect(() => {
-    if (!showAIMagicDialog) return
-
-    const stages = [
-      { duration: 1500, nextStage: 1 },
-      { duration: 2000, nextStage: 2 },
-      { duration: 1500, nextStage: 3 },
-    ]
-
-    if (aiMagicStage < stages.length) {
-      const timer = setTimeout(() => {
-        setAIMagicStage(aiMagicStage + 1)
-      }, stages[aiMagicStage].duration)
-
-      return () => clearTimeout(timer)
-    } else if (aiMagicStage === 3) {
-      // Close dialog after completing all stages
-      setTimeout(() => {
-        setShowAIMagicDialog(false)
-        setAIMagicStage(0)
-        toast.success('AI suggestions applied successfully!')
-      }, 500)
-    }
-  }, [showAIMagicDialog, aiMagicStage])
-
-  // Handle AI Magic button click
-  const handleAIMagic = () => {
-    setShowAIMagicDialog(true)
-    setAIMagicStage(0)
-  }
 
   return (
     <div className="space-y-6">
@@ -389,14 +356,11 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
               </CardTitle>
               <CardDescription>Configure where these business rules should apply</CardDescription>
             </div>
-            <Button
-              onClick={handleAIMagic}
-              size="sm"
-              className="gap-2 bg-gradient-to-r from-primary to-cyan-400 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
-            >
-              <Wand2 className="w-4 h-4" />
-              AI Magic
-            </Button>
+            <AIBusinessRulesEnhancement
+              config={config}
+              projectId={projectId}
+              onEnhanced={onChange}
+            />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
