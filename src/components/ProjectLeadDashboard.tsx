@@ -978,6 +978,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           <BusinessRulesEditor
             config={businessRules}
             onChange={saveBusinessRules}
+            projectId={projectId}
             availableModules={modules.map(m => ({
               id: m.id,
               moduleName: (m as any).module_name || m.moduleName || ''
