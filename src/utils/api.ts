@@ -470,30 +470,53 @@ export const modulesAPI = {
 
 export const businessRulesAPI = {
   get: async (projectId: string) => {
-    const { data, error } = await supabase
-      .from('business_rules')
-      .select('*')
-      .eq('project_id', projectId)
-      .single()
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/business-rules`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      })
 
-    if (error && error.code !== 'PGRST116') throw error
-    return { businessRules: data?.config || null }
+      if (!response.ok) {
+        if (response.status === 404) {
+          return { businessRules: null }
+        }
+        throw new Error('Failed to fetch business rules')
+      }
+
+      const result = await response.json()
+      return { businessRules: result.businessRules }
+    } catch (error) {
+      console.error('Error fetching business rules:', error)
+      return { businessRules: null }
+    }
   },
 
-  save: async (projectId: string, businessRules: any) => {
-    const { data, error } = await supabase
-      .from('business_rules')
-      .upsert({
-        project_id: projectId,
-        config: businessRules,
-        apply_to_all_project: businessRules.applyToAllProjects || false,
-        specific_modules: businessRules.specificModules || []
-      })
-      .select()
-      .single()
+  save: async (projectId: string, businessRules: any, method: 'POST' | 'PUT' = 'POST') => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/business-rules`, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${session?.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ businessRules })
+    })
 
-    if (error) throw error
-    return { businessRules: data.config }
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to save business rules')
+    }
+
+    const result = await response.json()
+    return { businessRules: result.businessRules }
+  },
+
+  update: async (projectId: string, businessRules: any) => {
+    return businessRulesAPI.save(projectId, businessRules, 'PUT')
   },
 
   getByModule: async (projectId: string, moduleId: string) => {
@@ -1018,8 +1041,17 @@ export const apiClient = {
   },
 
   put: async (url: string, data: any) => {
-    const projectId = url.split('/')[2]
-    return projectAPI.update(projectId, data)
+    const parts = url.split('/')
+    const projectId = parts[2]
+    const endpoint = parts[3]
+    
+    switch (endpoint) {
+      case 'business-rules':
+        // For PUT, we want to update existing business rules
+        return businessRulesAPI.update(projectId, data.businessRules)
+      default:
+        return projectAPI.update(projectId, data)
+    }
   },
 
   delete: async (url: string) => {

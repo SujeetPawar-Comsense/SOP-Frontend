@@ -342,9 +342,20 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       // Load modules
       const modulesResponse = await apiClient.get(`/projects/${projectId}/modules`)
       if (modulesResponse.modules) {
-        setModules(modulesResponse.modules)
+        // Normalize module data from backend (snake_case to camelCase)
+        const normalizedModules = modulesResponse.modules.map((m: any) => ({
+          id: m.id,
+          moduleName: m.module_name || m.moduleName || '',
+          description: m.description || '',
+          priority: m.priority || 'Medium',
+          businessImpact: m.business_impact || m.businessImpact || '',
+          dependencies: m.dependencies || '',
+          status: m.status || 'Not Started',
+          userStoryId: m.user_story_id || m.userStoryId
+        }))
+        setModules(normalizedModules)
         // If modules already exist, mark that Save and Continue was clicked (for existing projects)
-        if (modulesResponse.modules.length > 0) {
+        if (normalizedModules.length > 0) {
           setHasClickedSaveAndContinue(true)
         }
       }
@@ -615,10 +626,21 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   const saveBusinessRules = async (rules: BusinessRulesConfig) => {
     setSaving(true)
     try {
-      await apiClient.post(`/projects/${projectId}/business-rules`, { businessRules: rules })
+      // First check if business rules exist for this project
+      const getResponse = await apiClient.get(`/projects/${projectId}/business-rules`)
+      
+      if (getResponse.businessRules) {
+        // Use PUT to update existing rules
+        await apiClient.put(`/projects/${projectId}/business-rules`, { businessRules: rules })
+      } else {
+        // Use POST to create new rules
+        await apiClient.post(`/projects/${projectId}/business-rules`, { businessRules: rules })
+      }
+      
       setBusinessRules(rules)
       toast.success('Business rules saved')
     } catch (error: any) {
+      console.error('Error saving business rules:', error)
       toast.error('Failed to save business rules')
     } finally {
       setSaving(false)
@@ -956,7 +978,10 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           <BusinessRulesEditor
             config={businessRules}
             onChange={saveBusinessRules}
-            availableModules={modules}
+            availableModules={modules.map(m => ({
+              id: m.id,
+              moduleName: (m as any).module_name || m.moduleName || ''
+            }))}
           />
         )}
 
@@ -965,7 +990,10 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             config={actionsInteractions}
             onChange={setActionsInteractions}
             onSave={saveActionsInteractions}
-            availableModules={modules}
+            availableModules={modules.map(m => ({
+              id: m.id,
+              moduleName: (m as any).module_name || m.moduleName || ''
+            }))}
           />
         )}
 
