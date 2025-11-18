@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from './ui/button'
-import { Wand2, Loader2 } from 'lucide-react'
+import { Wand2, Loader2, X, Check, ChevronsUpDown } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -10,10 +10,11 @@ import {
   DialogTitle,
 } from './ui/dialog'
 import { Textarea } from './ui/textarea'
-import { Checkbox } from './ui/checkbox'
 import { Label } from './ui/label'
 import { Badge } from './ui/badge'
-import { ScrollArea } from './ui/scroll-area'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from './ui/command'
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
+import { cn } from './ui/utils'
 import { toast } from 'sonner'
 import { supabase } from '../utils/supabaseClient'
 import { UserStory } from './UserStoriesEditor'
@@ -39,6 +40,7 @@ export default function AIUserStoriesEnhancement({
   const [isEnhancing, setIsEnhancing] = useState(false)
   const [selectedStories, setSelectedStories] = useState<Set<string>>(new Set())
   const [selectAll, setSelectAll] = useState(true)
+  const [open, setOpen] = useState(false)
 
   // Initialize selected stories when dialog opens
   useEffect(() => {
@@ -194,7 +196,7 @@ export default function AIUserStoriesEnhancement({
                 <Label className="text-sm font-medium">Select User Stories</Label>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-xs">
-                    {selectedStories.size} of {userStories.length} selected
+                    {selectedStories.size} selected
                   </Badge>
                   <Button
                     type="button"
@@ -203,64 +205,97 @@ export default function AIUserStoriesEnhancement({
                     onClick={handleSelectAllToggle}
                     className="h-7 text-xs"
                   >
-                    {selectAll ? 'Deselect All' : 'Select All'}
+                    {selectAll ? 'Clear All' : 'Select All'}
                   </Button>
                 </div>
               </div>
               
-              <ScrollArea className="h-[300px] w-full rounded-md border border-primary/20 p-3">
-                <div className="space-y-2">
-                  {userStories.map((story) => {
-                    const isSelected = selectedStories.has(story.id)
-                    const moduleName = story.moduleId ? getModuleName(story.moduleId) : 'No Module'
-                    
+              <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={open}
+                    className="w-full justify-between text-left font-normal"
+                  >
+                    <span className="truncate">
+                      {selectedStories.size === 0
+                        ? "Select user stories..."
+                        : selectedStories.size === 1
+                        ? userStories.find(s => selectedStories.has(s.id))?.title
+                        : `${selectedStories.size} stories selected`}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search user stories..." />
+                    <CommandEmpty>No user story found.</CommandEmpty>
+                    <CommandGroup className="max-h-[300px] overflow-auto">
+                      {userStories.map((story) => {
+                        const isSelected = selectedStories.has(story.id)
+                        const moduleName = story.moduleId ? getModuleName(story.moduleId) : 'No Module'
+                        
+                        return (
+                          <CommandItem
+                            key={story.id}
+                            value={story.title}
+                            onSelect={() => handleStoryToggle(story.id)}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-start gap-2 flex-1">
+                              <Check
+                                className={cn(
+                                  "h-4 w-4 mt-0.5",
+                                  isSelected ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              <div className="flex-1 space-y-1">
+                                <div className="font-medium text-sm">{story.title}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {moduleName} • {story.priority || 'Medium'} • {story.status || 'Not Started'}
+                                </div>
+                              </div>
+                            </div>
+                          </CommandItem>
+                        )
+                      })}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              
+              {/* Selected Stories Preview */}
+              {selectedStories.size > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(selectedStories).slice(0, 5).map(storyId => {
+                    const story = userStories.find(s => s.id === storyId)
+                    if (!story) return null
                     return (
-                      <div
-                        key={story.id}
-                        className={`flex items-start space-x-3 p-3 rounded-lg transition-colors ${
-                          isSelected ? 'bg-primary/10' : 'hover:bg-muted'
-                        }`}
+                      <Badge 
+                        key={storyId} 
+                        variant="secondary" 
+                        className="text-xs flex items-center gap-1"
                       >
-                        <Checkbox
-                          id={story.id}
-                          checked={isSelected}
-                          onCheckedChange={() => handleStoryToggle(story.id)}
-                          className="mt-1"
+                        {story.title}
+                        <X 
+                          className="h-3 w-3 cursor-pointer hover:text-destructive" 
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStoryToggle(storyId)
+                          }}
                         />
-                        <Label
-                          htmlFor={story.id}
-                          className="flex-1 cursor-pointer text-sm space-y-1"
-                        >
-                          <div className="font-medium">{story.title}</div>
-                          <div className="text-xs text-muted-foreground">
-                            As a {story.userRole || 'User'}, {story.description}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs">
-                              {moduleName}
-                            </Badge>
-                            {story.priority && (
-                              <Badge variant="outline" className="text-xs">
-                                {story.priority}
-                              </Badge>
-                            )}
-                            {story.status && (
-                              <Badge variant="outline" className="text-xs">
-                                {story.status}
-                              </Badge>
-                            )}
-                          </div>
-                        </Label>
-                      </div>
+                      </Badge>
                     )
                   })}
-                  {userStories.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No user stories available. Please create user stories first.
-                    </div>
+                  {selectedStories.size > 5 && (
+                    <Badge variant="outline" className="text-xs">
+                      +{selectedStories.size - 5} more
+                    </Badge>
                   )}
                 </div>
-              </ScrollArea>
+              )}
             </div>
 
             {/* Enhancement Request */}
