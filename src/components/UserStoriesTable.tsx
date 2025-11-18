@@ -28,12 +28,15 @@ import {
   ChevronRight,
   ArrowUpDown,
   Copy,
-  FileText
+  FileText,
+  Zap
 } from 'lucide-react'
+import { Checkbox } from './ui/checkbox'
 import { UserStory } from './UserStoriesEditor'
 import { ModuleFeature } from './ExcelUtils'
 import { FeatureTask } from './FeaturesTasksEditor'
 import AIGeneralEnhancement from './AIGeneralEnhancement'
+import { featuresAPI } from '../utils/api'
 
 interface UserStoriesTableProps {
   userStories: UserStory[]
@@ -41,6 +44,7 @@ interface UserStoriesTableProps {
   features: FeatureTask[]
   projectId?: string
   onChange: (userStories: UserStory[]) => void
+  onFeaturesChange?: (features: FeatureTask[]) => void
 }
 
 export default function UserStoriesTable({
@@ -48,7 +52,8 @@ export default function UserStoriesTable({
   modules,
   features,
   projectId,
-  onChange
+  onChange,
+  onFeaturesChange
 }: UserStoriesTableProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<string>('All Priorities')
@@ -59,6 +64,11 @@ export default function UserStoriesTable({
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [editingStory, setEditingStory] = useState<UserStory | null>(null)
   const featuresCardRef = useRef<HTMLDivElement>(null)
+  
+  // Feature management state
+  const [customFeatureName, setCustomFeatureName] = useState('')
+  const [selectedFeatureIds, setSelectedFeatureIds] = useState<Set<string>>(new Set())
+  const [customFeatures, setCustomFeatures] = useState<string[]>([])
 
   // Helper function to get normalized userRole
   const getUserRole = (story: UserStory | any): string => {
@@ -179,6 +189,9 @@ export default function UserStoriesTable({
     // If clicking the same story, deselect it
     if (selectedStoryId === storyId) {
       setSelectedStoryId(null)
+      setSelectedFeatureIds(new Set())
+      setCustomFeatures([])
+      setCustomFeatureName('')
       return
     }
     
@@ -198,6 +211,22 @@ export default function UserStoriesTable({
       }, 150)
     }
   }, [selectedStoryId])
+  
+  // Initialize selected features when story is selected
+  useEffect(() => {
+    if (selectedStoryId) {
+      const existingFeatures = getFeaturesForStory(selectedStoryId)
+      if (existingFeatures.length > 0) {
+        // Initialize with existing feature titles
+        const featureTitles = existingFeatures.map(f => f.title || '').filter(Boolean)
+        setSelectedFeatureIds(new Set(featureTitles))
+      } else {
+        setSelectedFeatureIds(new Set())
+      }
+      setCustomFeatures([])
+      setCustomFeatureName('')
+    }
+  }, [selectedStoryId, features])
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -426,84 +455,263 @@ export default function UserStoriesTable({
         if (!selectedStory) return null
         
         const storyFeatures = getFeaturesForStory(selectedStoryId)
+        const moduleName = getModuleName(selectedStory.moduleId || (selectedStory as any).module_id)
+        
+        // Use actual features from database, combine with custom features
+        const allFeatures = [
+          ...storyFeatures.map(f => f.title || '').filter(Boolean), 
+          ...customFeatures
+        ]
+        const allSelected = allFeatures.length > 0 && allFeatures.every(f => {
+          const featureId = typeof f === 'string' ? f : f
+          return selectedFeatureIds.has(featureId)
+        })
+        
+        const handleAddCustomFeature = () => {
+          if (customFeatureName.trim()) {
+            setCustomFeatures([...customFeatures, customFeatureName.trim()])
+            setCustomFeatureName('')
+          }
+        }
+        
+        const handleToggleFeature = (featureName: string) => {
+          const newSelected = new Set(selectedFeatureIds)
+          if (newSelected.has(featureName)) {
+            newSelected.delete(featureName)
+          } else {
+            newSelected.add(featureName)
+          }
+          setSelectedFeatureIds(newSelected)
+        }
+        
+        const handleSelectAll = () => {
+          if (allSelected) {
+            setSelectedFeatureIds(new Set())
+          } else {
+            setSelectedFeatureIds(new Set(allFeatures))
+          }
+        }
+        
+        const handleResetFeatures = () => {
+          setSelectedFeatureIds(new Set())
+          setCustomFeatures([])
+          setCustomFeatureName('')
+        }
+        
+        const handleSaveChanges = async () => {
+          if (!projectId || !selectedStoryId) {
+            toast.error('Cannot save features: Missing project or user story ID')
+            return
+          }
+          
+          try {
+            // Reload features first to get latest data
+            const featuresResponse = await featuresAPI.get(projectId)
+            const currentFeatures = featuresResponse.features || []
+            
+            // Get existing features for this user story
+            const existingFeatures = currentFeatures.filter((f: any) => {
+              const featureUserStoryId = f.userStoryId || f.user_story_id
+              return featureUserStoryId && String(featureUserStoryId) === String(selectedStoryId)
+            })
+            
+            console.log('Existing features for story:', existingFeatures)
+            console.log('Selected feature IDs:', Array.from(selectedFeatureIds))
+            
+            // Create features to add/update
+            const featuresToSave: FeatureTask[] = []
+            
+            // Add selected features
+            Array.from(selectedFeatureIds).forEach(featureName => {
+              const existingFeature = existingFeatures.find((f: any) => f.title === featureName)
+              if (existingFeature) {
+                // Keep existing feature
+                featuresToSave.push(existingFeature)
+              } else {
+                // Create new feature
+                const newFeature: FeatureTask = {
+                  id: crypto.randomUUID(),
+                  title: String(featureName),
+                  description: '',
+                  userStoryId: selectedStoryId,
+                  priority: 'Medium',
+                  status: 'Not Started'
+                } as FeatureTask
+                featuresToSave.push(newFeature)
+              }
+            })
+            
+            // Combine all project features: keep features from other stories, replace features for this story
+            const allProjectFeatures = currentFeatures
+              .filter((f: any) => {
+                const featureUserStoryId = f.userStoryId || f.user_story_id
+                // Keep features that don't belong to this story
+                return !featureUserStoryId || String(featureUserStoryId) !== String(selectedStoryId)
+              })
+              .concat(featuresToSave)
+            
+            console.log('Saving features:', allProjectFeatures.length, 'total features')
+            
+            // Save features via API
+            if (projectId) {
+              const savedResponse = await featuresAPI.save(projectId, allProjectFeatures)
+              
+              // Notify parent component to reload features
+              if (onFeaturesChange && savedResponse.features) {
+                onFeaturesChange(savedResponse.features)
+              }
+              
+              toast.success(`Successfully saved ${featuresToSave.length} feature(s)`)
+              
+              // Reload features to update the UI
+              const updatedFeatures = await featuresAPI.get(projectId)
+              if (onFeaturesChange && updatedFeatures.features) {
+                onFeaturesChange(updatedFeatures.features)
+              }
+            }
+          } catch (error: any) {
+            console.error('Failed to save features:', error)
+            toast.error(error.message || 'Failed to save features')
+          }
+        }
         
         return (
           <Card 
             ref={featuresCardRef}
-            className="border-primary/30 bg-primary/5"
+            className="border-primary/30 bg-card/50 rounded-lg"
           >
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-primary" />
-                  <CardTitle className="text-lg">
-                    {selectedStory.title} - Features
-                  </CardTitle>
-                  <CardDescription className="ml-2">
-                    Manage features for this user story ({storyFeatures.length} feature{storyFeatures.length !== 1 ? 's' : ''})
+            <CardHeader className="pb-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Zap className="w-5 h-5 text-primary" />
+                    <CardTitle className="text-xl text-primary">
+                      {moduleName} - Feature Management
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-sm text-muted-foreground">
+                    Select from recommended features or add custom features for this module
                   </CardDescription>
                 </div>
                 <Button
-                  variant="outline"
+                  variant="default"
                   size="sm"
-                  className="bg-primary/10 hover:bg-primary/20 text-primary border-primary/30"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
-                  <Wand2 className="w-4 h-4 mr-2" />
+                  <Zap className="w-4 h-4 mr-2" />
                   AI Magic
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {storyFeatures.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No features found for this user story</p>
-                  <p className="text-sm mt-2">Add features to implement this user story</p>
+            <CardContent className="space-y-6">
+              {/* Add Custom Feature Section */}
+              <div className="space-y-2">
+                <Label className="text-base font-semibold">Add Custom Feature</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter custom feature name..."
+                    value={customFeatureName}
+                    onChange={(e) => setCustomFeatureName(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleAddCustomFeature()
+                      }
+                    }}
+                    className="flex-1 border-primary/30"
+                  />
+                  <Button
+                    onClick={handleAddCustomFeature}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add
+                  </Button>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {storyFeatures.map((feature) => (
-                    <Card 
-                      key={feature.id}
-                      className="border-primary/20 bg-card/50 hover:bg-card/70 transition-colors"
+              </div>
+
+              {/* Features Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-primary" />
+                    <Label className="text-base font-semibold text-primary">
+                      Features ({allFeatures.length})
+                    </Label>
+                  </div>
+                  {allFeatures.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSelectAll}
+                      className="border-primary/30 text-primary hover:bg-primary/10"
                     >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-semibold text-primary">{feature.title}</h4>
-                              <Badge className={getPriorityColor(feature.priority || 'Medium')}>
-                                {feature.priority || 'Medium'}
-                              </Badge>
-                              <Badge className={getStatusColor(feature.status || 'Not Started')}>
-                                {feature.status || 'Not Started'}
-                              </Badge>
-                            </div>
-                            {feature.description && (
-                              <p className="text-sm text-muted-foreground">{feature.description}</p>
-                            )}
-                            {feature.businessRules && (
-                              <div className="mt-2 p-2 bg-cyan-500/10 border border-cyan-500/30 rounded">
-                                <Label className="text-xs text-cyan-400 mb-1">Business Rules</Label>
-                                <p className="text-xs text-muted-foreground">{feature.businessRules}</p>
-                              </div>
-                            )}
-                            {feature.estimatedHours && (
-                              <div className="text-xs text-muted-foreground">
-                                Estimated: {feature.estimatedHours} hours
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                      <Zap className="w-4 h-4 mr-2" />
+                      Select All ({allFeatures.length})
+                    </Button>
+                  )}
                 </div>
-              )}
+                
+                {/* Features Grid */}
+                {allFeatures.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>No features found. Add custom features above or save features to see them here.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {allFeatures.map((featureName) => {
+                      const featureId = typeof featureName === 'string' ? featureName : featureName
+                      const isSelected = selectedFeatureIds.has(featureId)
+                      const displayName = typeof featureName === 'string' ? featureName : featureName
+                      
+                      return (
+                        <div
+                          key={featureId}
+                          className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-primary bg-primary/10'
+                              : 'border-primary/20 bg-card/30 hover:border-primary/40'
+                          }`}
+                          onClick={() => handleToggleFeature(featureId)}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => handleToggleFeature(featureId)}
+                            className="border-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <span className="text-sm font-medium text-foreground flex-1">
+                            {displayName}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-between pt-4 border-t border-primary/20">
+                <Button
+                  variant="outline"
+                  onClick={handleResetFeatures}
+                  className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Reset Features
+                </Button>
+                <Button
+                  onClick={handleSaveChanges}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Changes
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )
       })()}
+
 
       {/* Edit User Story Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>

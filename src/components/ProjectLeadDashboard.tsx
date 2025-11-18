@@ -931,6 +931,24 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             features={features}
             projectId={projectId}
             onChange={saveUserStories}
+            onFeaturesChange={async (updatedFeatures) => {
+              setFeatures(updatedFeatures)
+              // Reload features from API to ensure consistency
+              try {
+                const featuresResponse = await apiClient.get(`/projects/${projectId}/features`)
+                if (featuresResponse.features) {
+                  const normalizedFeatures = featuresResponse.features.map((f: any) => ({
+                    ...f,
+                    userStoryId: f.userStoryId || f.user_story_id || null,
+                    moduleId: f.moduleId || f.module_id || null,
+                    businessRules: f.businessRules || f.business_rules || null
+                  }))
+                  setFeatures(normalizedFeatures)
+                }
+              } catch (error) {
+                console.error('Failed to reload features:', error)
+              }
+            }}
           />
         )}
 
