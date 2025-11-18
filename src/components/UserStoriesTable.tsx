@@ -593,14 +593,14 @@ export default function UserStoriesTable({
                     Select from recommended features or add custom features for this module
                   </CardDescription>
                 </div>
-                <Button
+                {/* <Button
                   variant="default"
                   size="sm"
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   <Zap className="w-4 h-4 mr-2" />
                   AI Magic
-                </Button>
+                </Button> */}
               </div>
             </CardHeader>
             <CardContent className="space-y-6">

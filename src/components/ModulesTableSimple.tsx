@@ -641,14 +641,14 @@ export default function ModulesTable({
                       Define business rules and constraints for this module
                     </CardDescription>
                   </div>
-                  <Button
+                  {/* <Button
                     onClick={handleAIMagic}
                     size="sm"
                     className="gap-2 bg-gradient-to-r from-primary to-cyan-400 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
                   >
                     <Wand2 className="w-4 h-4" />
                     AI Magic
-                  </Button>
+                  </Button> */}
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
