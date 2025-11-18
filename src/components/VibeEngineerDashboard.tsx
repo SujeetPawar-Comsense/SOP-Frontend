@@ -9,7 +9,7 @@ import { Checkbox } from './ui/checkbox'
 import { Label } from './ui/label'
 import { Loader2, Book, Search, Zap, ChevronLeft, ChevronRight, Code2, Sparkles, ArrowLeft, Copy, FileText, ChevronDown, CheckCircle2, FileCode, ArrowUp, Calendar, Database, Percent, Image, Shield, CheckSquare } from 'lucide-react'
 import { toast } from 'sonner'
-import { modulesAPI, projectAPI, featuresAPI, vibePromptsAPI } from '../utils/api'
+import { modulesAPI, projectAPI, featuresAPI, vibePromptsAPI, userStoriesAPI, businessRulesAPI } from '../utils/api'
 import VibePromptGenerator from './VibePromptGenerator'
 import { Textarea } from './ui/textarea'
 
@@ -61,6 +61,8 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null)
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set())
   const [features, setFeatures] = useState<Feature[]>([])
+  const [userStories, setUserStories] = useState<any[]>([])
+  const [businessRules, setBusinessRules] = useState<any>(null)
   const [currentPromptId, setCurrentPromptId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
@@ -103,6 +105,18 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
       const featuresResponse = await featuresAPI.get(projectId)
       if (featuresResponse.features) {
         setFeatures(featuresResponse.features)
+      }
+
+      // Load user stories
+      const userStoriesResponse = await userStoriesAPI.get(projectId)
+      if (userStoriesResponse.userStories) {
+        setUserStories(userStoriesResponse.userStories)
+      }
+
+      // Load business rules
+      const businessRulesResponse = await businessRulesAPI.get(projectId)
+      if (businessRulesResponse.businessRules) {
+        setBusinessRules(businessRulesResponse.businessRules)
       }
     } catch (error: any) {
       console.error('Failed to load project data:', error)
@@ -646,6 +660,133 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
                             </p>
                           </div>
                         </div>
+
+                        {/* User Stories Section */}
+                        {(() => {
+                          const moduleUserStories = userStories.filter(story => story.module_id === moduleId || story.moduleId === moduleId)
+                          if (moduleUserStories.length > 0) {
+                            return (
+                              <>
+                                <div className="flex items-center gap-2 mb-4">
+                                  <Book className="h-5 w-5 text-blue-500" />
+                                  <h3 className="text-lg font-semibold text-blue-500">
+                                    User Stories ({moduleUserStories.length})
+                                  </h3>
+                                </div>
+                                <div className="grid grid-cols-1 gap-3 mb-6">
+                                  {moduleUserStories.map((story) => (
+                                    <div key={story.id} className="p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
+                                      <div className="flex items-start justify-between mb-2">
+                                        <h4 className="font-medium text-sm">{story.title}</h4>
+                                        <Badge variant="outline" className="text-xs">
+                                          {story.priority || 'Medium'}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mb-2">
+                                        As a {story.user_role || story.userRole}, {story.description}
+                                      </p>
+                                      {story.acceptance_criteria && (
+                                        <p className="text-xs text-muted-foreground">
+                                          <span className="font-semibold">Acceptance Criteria:</span> {story.acceptance_criteria}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            )
+                          }
+                          return null
+                        })()}
+
+                        {/* Business Rules Section */}
+                        {(() => {
+                          // Get business rules applicable to this module
+                          const getModuleBusinessRules = () => {
+                            if (!businessRules) return []
+                            
+                            const rules: Array<{category: string, subcategory: string, rule: string}> = []
+                            const moduleName = module.module_name || module.moduleName
+                            
+                            // Check if rules apply to all projects or this specific module
+                            if (businessRules.applyToAllProjects || 
+                                (businessRules.specificModules && businessRules.specificModules.includes(moduleId))) {
+                              
+                              // Get all defined rules from categories
+                              if (businessRules.categories) {
+                                businessRules.categories.forEach(category => {
+                                  // Check subcategories
+                                  if (category.subcategories) {
+                                    category.subcategories.forEach(sub => {
+                                      if (sub.userRule && sub.userRule.trim()) {
+                                        // Check if this rule applies to this module
+                                        const appliesTo = sub.applicableTo || []
+                                        if (appliesTo.length === 0 || appliesTo.includes(moduleName)) {
+                                          rules.push({
+                                            category: category.name,
+                                            subcategory: sub.name,
+                                            rule: sub.userRule
+                                          })
+                                        }
+                                      }
+                                    })
+                                  }
+                                  
+                                  // Check custom subcategories
+                                  if (category.customSubcategories) {
+                                    category.customSubcategories.forEach(sub => {
+                                      if (sub.userRule && sub.userRule.trim()) {
+                                        const appliesTo = sub.applicableTo || []
+                                        if (appliesTo.length === 0 || appliesTo.includes(moduleName)) {
+                                          rules.push({
+                                            category: category.name,
+                                            subcategory: sub.name,
+                                            rule: sub.userRule
+                                          })
+                                        }
+                                      }
+                                    })
+                                  }
+                                })
+                              }
+                            }
+                            
+                            return rules
+                          }
+                          
+                          const moduleBusinessRules = getModuleBusinessRules()
+                          
+                          if (moduleBusinessRules.length > 0) {
+                            return (
+                              <>
+                                <div className="flex items-center gap-2 mb-4">
+                                  <Shield className="h-5 w-5 text-purple-500" />
+                                  <h3 className="text-lg font-semibold text-purple-500">
+                                    Business Rules ({moduleBusinessRules.length})
+                                  </h3>
+                                </div>
+                                <div className="grid grid-cols-1 gap-3 mb-6">
+                                  {moduleBusinessRules.map((rule, index) => (
+                                    <div key={index} className="p-3 rounded-lg border border-purple-500/20 bg-purple-500/5">
+                                      <div className="flex items-start gap-2">
+                                        <Shield className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-xs font-semibold text-purple-500">{rule.category}</span>
+                                            <span className="text-xs text-muted-foreground">•</span>
+                                            <span className="text-xs text-muted-foreground">{rule.subcategory}</span>
+                                          </div>
+                                          <p className="text-sm">{rule.rule}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            )
+                          }
+                          return null
+                        })()}
 
                         {/* Recommended Features Header */}
                         <div className="flex items-center justify-between mb-4">
