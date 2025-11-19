@@ -401,29 +401,65 @@ export const userStoriesAPI = {
       .order('created_at', { ascending: false })
 
     if (error) throw error
-    return { userStories: data || [] }
+    
+    // Transform snake_case to camelCase for frontend
+    const transformedData = (data || []).map(story => ({
+      id: story.id,
+      title: story.title,
+      userRole: story.user_role,
+      description: story.description,
+      acceptanceCriteria: story.acceptance_criteria,
+      priority: story.priority,
+      status: story.status,
+      moduleId: story.module_id,
+      projectId: story.project_id,
+      createdAt: story.created_at,
+      updatedAt: story.updated_at
+    }))
+    
+    return { userStories: transformedData }
   },
 
   save: async (projectId: string, userStories: any[]) => {
-    // Delete existing
-    await supabase
-      .from('user_stories')
-      .delete()
-      .eq('project_id', projectId)
+    // Transform camelCase to snake_case for database
+    const transformedStories = userStories.map(story => ({
+      id: story.id,
+      project_id: projectId,
+      title: story.title,
+      user_role: story.userRole || story.user_role,
+      description: story.description,
+      acceptance_criteria: story.acceptanceCriteria || story.acceptance_criteria,
+      priority: story.priority,
+      status: story.status,
+      module_id: story.moduleId || story.module_id,
+      created_at: story.createdAt || story.created_at,
+      updated_at: story.updatedAt || story.updated_at
+    }))
 
-    // Insert new
+    // Use upsert to update existing records or insert new ones
     const { data, error } = await supabase
       .from('user_stories')
-      .insert(
-        userStories.map(story => ({
-          ...story,
-          project_id: projectId
-        }))
-      )
+      .upsert(transformedStories, { onConflict: 'id' })
       .select()
 
     if (error) throw error
-    return { userStories: data || [] }
+    
+    // Transform snake_case back to camelCase for frontend
+    const transformedData = (data || []).map(story => ({
+      id: story.id,
+      title: story.title,
+      userRole: story.user_role,
+      description: story.description,
+      acceptanceCriteria: story.acceptance_criteria,
+      priority: story.priority,
+      status: story.status,
+      moduleId: story.module_id,
+      projectId: story.project_id,
+      createdAt: story.created_at,
+      updatedAt: story.updated_at
+    }))
+    
+    return { userStories: transformedData }
   }
 }
 
