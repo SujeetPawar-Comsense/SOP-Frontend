@@ -97,7 +97,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         setProjectName(response.project.name)
       }
     } catch (error) {
-      console.error('Failed to get project details:', error)
+      // Failed to get project details
     }
   }
   
@@ -136,11 +136,9 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             (projectInfoResponse.projectInformation.vision || 
              projectInfoResponse.projectInformation.purpose)) {
           // Project overview already exists, no need to analyze again
-          console.log('Project overview already exists from BRD creation')
           setProjectInformation(projectInfoResponse.projectInformation)
         } else if (response.project.brd_content) {
           // Project info doesn't exist, analyze the BRD
-          console.log('Project overview not found, analyzing BRD...')
           analyzeBRDOverview(response.project.brd_content)
         }
       }
@@ -158,24 +156,20 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     //    OR if modules data already exists (for existing projects)
     if (hasClickedSaveAndContinue || (modules && modules.length > 0)) {
       newUnlockedSections.add('modules')
-      console.log('Modules section unlocked (Save and Continue clicked or data exists)')
       
       // 2. Modules must have data to unlock User Stories & Features
       if (modules && modules.length > 0) {
         newUnlockedSections.add('userStoriesFeatures')
-        console.log('Modules data exists, unlocking User Stories & Features section')
         
         // 3. User Stories & Features must have data to unlock Business Rules
         const storiesFeaturesCompletion = calculateStoriesAndFeaturesCompletion()
         if (storiesFeaturesCompletion.total > 0 && (userStories.length > 0 || features.length > 0)) {
         newUnlockedSections.add('businessRules')
-          console.log('User Stories & Features data exists, unlocking Business Rules section')
           
           // 4. Business Rules must have data to unlock Actions & Interactions (original logic)
           const businessRulesCompletion = calculateBusinessRulesCompletion()
           if (businessRulesCompletion.total > 0 && businessRulesCompletion.completed > 0) {
             newUnlockedSections.add('actions')
-            console.log('Business Rules data exists, unlocking Actions & Interactions section')
           }
         }
         
@@ -183,7 +177,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         //    (regardless of businessRules status)
         if (newUnlockedSections.has('modules') && newUnlockedSections.has('userStoriesFeatures')) {
       newUnlockedSections.add('actions')
-          console.log('Modules and User Stories & Features unlocked, unlocking Actions & Interactions section')
     }
       }
     }
@@ -242,12 +235,10 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       
       if (!hasGeneratedData) {
         // No data yet, show AI generation modal
-        console.log('No generated data found, showing AI generation modal')
         // Modules will be unlocked by checkAndUnlockSections after hasClickedSaveAndContinue is set
         setShowAIGenerationModal(true)
       } else {
         // Data already exists, just move to next section
-        console.log('Generated data already exists, moving to next section')
         unlockNextSection()
         toast.success('Moving to next section!')
       }
@@ -270,11 +261,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   }
   
   const handleAIGenerationComplete = async (generatedData: any) => {
-    console.log('AI Generation complete:', generatedData)
-    console.log('Generated modules:', generatedData?.modules?.length)
-    console.log('Generated user stories:', generatedData?.modules?.reduce((acc: number, m: any) => acc + (m.userStories?.length || 0), 0))
-    console.log('Generated features:', generatedData?.modules?.reduce((acc: number, m: any) => 
-      acc + m.userStories?.reduce((storyAcc: number, s: any) => storyAcc + (s.features?.length || 0), 0), 0))
     
     // Close the modal first
     setShowAIGenerationModal(false)
@@ -283,7 +269,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     await new Promise(resolve => setTimeout(resolve, 2000))
     
     // Reload all data to get the newly generated content
-    console.log('Reloading project data...')
     await loadProjectData()
     
     // Unlock sections based on what was generated
@@ -374,9 +359,7 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       }
 
       // Load features/tasks
-      console.log('Loading features for project:', projectId)
       const featuresResponse = await apiClient.get(`/projects/${projectId}/features`)
-      console.log('Features response:', featuresResponse)
       if (featuresResponse.features) {
         // Normalize features to ensure userStoryId and businessRules are properly set
         const normalizedFeatures = featuresResponse.features.map((f: any) => ({
@@ -386,26 +369,15 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           businessRules: f.businessRules || f.business_rules || null // Handle both camelCase and snake_case
         }))
         setFeatures(normalizedFeatures)
-        console.log('Features set:', normalizedFeatures)
-        console.log('Number of features loaded:', normalizedFeatures.length)
-        console.log('Features with userStoryId:', normalizedFeatures.map((f: any) => ({ 
-          id: f.id, 
-          userStoryId: f.userStoryId, 
-          user_story_id: f.user_story_id,
-          title: f.title 
-        })))
       } else {
-        console.log('No features in response')
         setFeatures([])
       }
 
       // Load business rules
       const businessRulesResponse = await apiClient.get(`/projects/${projectId}/business-rules`)
-      console.log('📋 Business rules response:', businessRulesResponse)
       
       if (businessRulesResponse.businessRules && businessRulesResponse.businessRules.categories) {
         const loadedCategories = businessRulesResponse.businessRules.categories || []
-        console.log('📋 Loaded categories:', loadedCategories)
         
         // Transform database format to frontend format
         // Database format: categories: [{ id, name, description, applicableTo }]
@@ -422,7 +394,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             !('subcategories' in loadedCategories[0])
           
           if (isDatabaseFormat) {
-            console.log('📋 Transforming database format to frontend format')
             // Group all rules into a single "Business Rules" category
             const businessRulesCategory = {
               id: 'business-rules',
@@ -441,11 +412,8 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
             }
             
             transformedCategories = [businessRulesCategory]
-            console.log('📋 Created business rules category with', businessRulesCategory.subcategories.length, 'rules')
-            console.log('📋 Sample rule:', businessRulesCategory.subcategories[0])
           } else {
             // Already in frontend format
-            console.log('📋 Business rules already in frontend format')
             transformedCategories = loadedCategories
           }
         }
@@ -457,11 +425,9 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
           specificModules: businessRulesResponse.businessRules.specificModules || []
         }
         
-        console.log('📋 Final business rules (dynamic only):', finalBusinessRules)
         setBusinessRules(finalBusinessRules)
       } else {
         // No business rules found, set empty config (no static defaults)
-        console.log('📋 No business rules found, setting empty config')
         setBusinessRules({
           categories: [],
           applyToAllProjects: false,
@@ -516,7 +482,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         })
       }
     } catch (error: any) {
-      console.error('Failed to load project data:', error)
       toast.error('Failed to load project data')
     } finally {
       setLoading(false)
@@ -531,7 +496,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       toast.success('Project information saved')
     } catch (error: any) {
       toast.error('Failed to save project information')
-      console.error('Error:', error)
     } finally {
       setSaving(false)
     }
@@ -544,16 +508,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       const modulesForBackend = modulesList.map(module => {
         const moduleName = (module as any).module_name || module.moduleName || ''
         const businessImpact = (module as any).business_impact || module.businessImpact || ''
-        
-        console.log('Transforming module for backend:', { 
-          original: module, 
-          moduleName, 
-          businessImpact,
-          hasModuleName: !!module.moduleName,
-          hasModule_name: !!(module as any).module_name,
-          hasBusinessImpact: !!module.businessImpact,
-          hasBusiness_impact: !!(module as any).business_impact
-        })
         
         return {
           id: module.id,
@@ -568,13 +522,10 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
         }
       })
       
-      console.log('Modules for backend:', modulesForBackend)
-      
       await apiClient.post(`/projects/${projectId}/modules`, { modules: modulesForBackend })
       setModules(modulesList)
       toast.success('Modules saved')
     } catch (error: any) {
-      console.error('Error saving modules:', error)
       toast.error('Failed to save modules')
     } finally {
       setSaving(false)
@@ -582,10 +533,15 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   }
 
   const saveUserStories = async (stories: UserStory[]) => {
+    // Filter out stories that are incomplete (empty title and description)
+    const validStories = stories.filter(story => 
+      story.title?.trim() || story.description?.trim()
+    )
+    
     setSaving(true)
     try {
-      await apiClient.post(`/projects/${projectId}/user-stories`, { userStories: stories })
-      setUserStories(stories)
+      await apiClient.post(`/projects/${projectId}/user-stories`, { userStories: validStories })
+      setUserStories(validStories)
       toast.success('User stories saved')
     } catch (error: any) {
       toast.error('Failed to save user stories')
@@ -597,26 +553,16 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   const saveFeatures = async (featuresList: FeatureTask[]) => {
     setSaving(true)
     try {
-      console.log('Saving features:', featuresList)
-      console.log('Features with userStoryId:', featuresList.map(f => ({ id: f.id, userStoryId: f.userStoryId, title: f.title })))
-      
       // Verify user stories exist before saving features
       const userStoryIdsInFeatures = [...new Set(featuresList.map(f => f.userStoryId).filter(Boolean))];
       const existingUserStoryIds = userStories.map(s => s.id);
-      console.log('User story IDs in features:', userStoryIdsInFeatures);
-      console.log('Existing user story IDs:', existingUserStoryIds);
       
       const missingStoryIds = userStoryIdsInFeatures.filter(id => !existingUserStoryIds.includes(id));
-      if (missingStoryIds.length > 0) {
-        console.warn('⚠️ Features reference non-existent user stories:', missingStoryIds);
-      }
       
       const response = await apiClient.post(`/projects/${projectId}/features`, { features: featuresList })
-      console.log('Features save response:', response)
       setFeatures(featuresList)
       toast.success('Features/Tasks saved')
     } catch (error: any) {
-      console.error('Error saving features:', error)
       toast.error('Failed to save features/tasks')
     } finally {
       setSaving(false)
@@ -640,7 +586,6 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
       setBusinessRules(rules)
       toast.success('Business rules saved')
     } catch (error: any) {
-      console.error('Error saving business rules:', error)
       toast.error('Failed to save business rules')
     } finally {
       setSaving(false)

@@ -17,6 +17,7 @@ import { ScrollArea } from './ui/scroll-area'
 import { toast } from 'sonner'
 import { supabase } from '../utils/supabaseClient'
 import { ModuleFeature } from './ExcelUtils'
+import { modulesAPI, featuresAPI } from '../utils/api'
 
 interface AIGeneralEnhancementProps {
   modules: ModuleFeature[]
@@ -88,7 +89,7 @@ export default function AIGeneralEnhancement({
       // Filter modules to only include selected ones
       const modulesToEnhance = modules.filter(m => selectedModules.has(m.id))
       
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/brd/enhance-modules`, {
+      const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:3000'}/api/brd/enhance-modules`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,18 +109,114 @@ export default function AIGeneralEnhancement({
       const result = await response.json()
       
       if (result.success && result.data) {
+        // Check if the enhancement request is about business rules
+        const isBusinessRulesEnhancement = enhancementRequest.toLowerCase().includes('business rule') || 
+                                          enhancementRequest.toLowerCase().includes('business logic')
+        
         // Merge enhanced modules back into the full list
-        const enhancedModuleIds = new Set(result.data.map((m: ModuleFeature) => m.id))
+        const enhancedModuleIds = new Set(result.data.map((m: any) => m.id))
         const mergedModules = modules.map(module => {
           if (enhancedModuleIds.has(module.id)) {
             // Find the enhanced version
-            const enhanced = result.data.find((m: ModuleFeature) => m.id === module.id)
+            const enhanced = result.data.find((m: any) => m.id === module.id)
             return enhanced || module
           }
           return module
         })
         
-        toast.success(`Successfully enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''}!`)
+        // Save the enhanced modules to Supabase
+        try {
+          // Transform modules to backend format (snake_case)
+          const modulesForBackend = mergedModules.map(module => {
+            const moduleName = (module as any).module_name || module.moduleName || ''
+            const businessImpact = (module as any).business_impact || module.businessImpact || ''
+            
+            return {
+              id: module.id,
+              module_name: moduleName,
+              description: module.description || '',
+              priority: module.priority || 'Medium',
+              business_impact: businessImpact,
+              dependencies: Array.isArray(module.dependencies) 
+                ? module.dependencies.join(', ') 
+                : (module.dependencies || ''),
+              status: module.status || 'Not Started'
+            }
+          })
+          
+          await modulesAPI.save(projectId, modulesForBackend)
+          
+          // If this is a business rules enhancement, also check for features with business rules
+          if (isBusinessRulesEnhancement) {
+            const allFeatures: any[] = []
+            
+            // Extract features with business rules from enhanced modules
+            for (const enhancedModule of result.data) {
+              if (enhancedModule.features && Array.isArray(enhancedModule.features)) {
+                for (const feature of enhancedModule.features) {
+                  if (feature.business_rules || feature.businessRules) {
+                    allFeatures.push({
+                      id: feature.id,
+                      title: feature.featureName || feature.title || feature.name,
+                      description: feature.taskDescription || feature.description || '',
+                      module_id: enhancedModule.id,
+                      user_story_id: feature.userStoryId || feature.user_story_id || null,
+                      priority: feature.priority || 'Medium',
+                      status: feature.status || 'Not Started',
+                      business_rules: feature.business_rules || feature.businessRules || '',
+                      estimated_hours: feature.estimated_hours || feature.estimatedHours || null,
+                      assignee: feature.assignee || null
+                    })
+                  }
+                }
+              }
+              
+              // Also check if user stories have features with business rules
+              if (enhancedModule.userStories && Array.isArray(enhancedModule.userStories)) {
+                for (const userStory of enhancedModule.userStories) {
+                  if (userStory.features && Array.isArray(userStory.features)) {
+                    for (const feature of userStory.features) {
+                      if (feature.business_rules || feature.businessRules) {
+                        allFeatures.push({
+                          id: feature.id,
+                          title: feature.featureName || feature.title || feature.name,
+                          description: feature.taskDescription || feature.description || '',
+                          module_id: enhancedModule.id,
+                          user_story_id: userStory.id,
+                          priority: feature.priority || 'Medium',
+                          status: feature.status || 'Not Started',
+                          business_rules: feature.business_rules || feature.businessRules || '',
+                          estimated_hours: feature.estimated_hours || feature.estimatedHours || null,
+                          assignee: feature.assignee || null
+                        })
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            
+            // Save features with business rules if any were found
+            if (allFeatures.length > 0) {
+              try {
+                await featuresAPI.save(projectId, allFeatures)
+                toast.success(`Enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''} and saved ${allFeatures.length} feature${allFeatures.length !== 1 ? 's' : ''} with business rules!`)
+              } catch (featuresError) {
+                console.error('Failed to save features with business rules:', featuresError)
+                toast.success(`Enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''}! (Features save failed)`)
+              }
+            } else {
+              toast.success(`Successfully enhanced and saved ${result.data.length} module${result.data.length !== 1 ? 's' : ''}!`)
+            }
+          } else {
+            toast.success(`Successfully enhanced and saved ${result.data.length} module${result.data.length !== 1 ? 's' : ''}!`)
+          }
+        } catch (saveError) {
+          console.error('Failed to save enhanced modules to database:', saveError)
+          toast.warning('Modules enhanced but failed to save to database. Please try saving manually.')
+        }
+        
+        // Always call onEnhanced to update the UI
         onEnhanced(mergedModules)
         setShowDialog(false)
         setEnhancementRequest('')

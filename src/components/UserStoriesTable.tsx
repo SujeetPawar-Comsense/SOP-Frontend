@@ -62,9 +62,15 @@ export default function UserStoriesTable({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<UserStory | null>(null)
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null)
-  const [showEditDialog, setShowEditDialog] = useState(false)
-  const [editingStory, setEditingStory] = useState<UserStory | null>(null)
+  const [localStories, setLocalStories] = useState<UserStory[]>(userStories)
   const featuresCardRef = useRef<HTMLDivElement>(null)
+  
+  // Sync local stories with prop when not editing
+  useEffect(() => {
+    if (!editingId) {
+      setLocalStories(userStories)
+    }
+  }, [userStories, editingId])
   
   // Feature management state
   const [customFeatureName, setCustomFeatureName] = useState('')
@@ -106,7 +112,12 @@ export default function UserStoriesTable({
   }
 
   // Filter user stories
-  const filteredStories = userStories.filter(story => {
+  const filteredStories = localStories.filter(story => {
+    // Always show the story being edited
+    if (story.id === editingId) {
+      return true
+    }
+    
     const userRole = getUserRole(story)
     const matchesSearch = 
       story.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -133,10 +144,10 @@ export default function UserStoriesTable({
   const handleAddStory = () => {
     const newStory: UserStory = {
       id: crypto.randomUUID(),
-      title: 'New User Story',
+      title: '',
       userRole: 'User',
-      description: 'As a User, I want to...',
-      acceptanceCriteria: '- Given...\n- When...\n- Then...',
+      description: '',
+      acceptanceCriteria: '',
       priority: 'Medium',
       status: 'Not Started',
       moduleId: modules[0]?.id
@@ -147,37 +158,23 @@ export default function UserStoriesTable({
       user_role: newStory.userRole,
       acceptance_criteria: newStory.acceptanceCriteria
     }
-    onChange([...userStories, storyWithBothFormats as UserStory])
     setEditingId(newStory.id)
     setEditForm(newStory)
+    // Add new story at the beginning of the local list so it appears at the top
+    // Don't call onChange yet - wait for save
+    setLocalStories([storyWithBothFormats as UserStory, ...localStories])
   }
 
   const handleEdit = (story: UserStory) => {
-    setEditingStory({ ...story })
-    setShowEditDialog(true)
+    setEditingId(story.id)
+    setEditForm(story)
   }
 
-  const handleSaveEdit = () => {
-    if (!editingStory) return
-
-    // Ensure both formats are preserved when saving
-    const storyWithBothFormats = {
-      ...editingStory,
-      user_role: editingStory.userRole || editingStory.user_role,
-      acceptance_criteria: editingStory.acceptanceCriteria || editingStory.acceptance_criteria
-    }
-
-    const updatedStories = userStories.map(s => 
-      s.id === editingStory.id ? storyWithBothFormats : s
-    )
-    onChange(updatedStories)
-    setShowEditDialog(false)
-    setEditingStory(null)
-    toast.success('User story updated successfully')
-  }
 
   const handleDelete = (id: string) => {
-    onChange(userStories.filter(s => s.id !== id))
+    const updatedStories = localStories.filter(s => s.id !== id)
+    setLocalStories(updatedStories)
+    onChange(updatedStories)
     if (selectedStoryId === id) {
       setSelectedStoryId(null)
     }
@@ -275,10 +272,13 @@ export default function UserStoriesTable({
                 <Copy className="w-4 h-4 mr-2" />
               </Button>
               <AIUserStoriesEnhancement
-                userStories={userStories}
+                userStories={localStories}
                 modules={modules}
                 projectId={projectId}
-                onEnhanced={onChange}
+                onEnhanced={(enhanced) => {
+                  setLocalStories(enhanced)
+                  onChange(enhanced)
+                }}
               />
             </div>
           </div>
@@ -365,6 +365,150 @@ export default function UserStoriesTable({
                 {filteredStories.map((story) => {
                   const isSelected = selectedStoryId === story.id
                   const storyFeatures = getFeaturesForStory(story.id)
+                  const isEditing = editingId === story.id
+                  
+                  if (isEditing && editForm) {
+                    return (
+                      <TableRow key={story.id} className="border-primary/20 bg-primary/5">
+                        <TableCell>
+                          <Input
+                            value={editForm.title || ''}
+                            onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                            placeholder="User Story Title"
+                            className="w-full"
+                            autoFocus
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={editForm.moduleId || ''}
+                            onValueChange={(value) => setEditForm({ ...editForm, moduleId: value })}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select Module" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {modules.map(module => (
+                                <SelectItem key={module.id} value={module.id}>
+                                  {module.moduleName || (module as any).module_name || 'Unnamed Module'}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={editForm.userRole || ''}
+                            onChange={(e) => setEditForm({ ...editForm, userRole: e.target.value })}
+                            placeholder="User Role"
+                            className="w-full"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Textarea
+                            value={editForm.description || ''}
+                            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                            placeholder="As a [role], I want to..."
+                            className="w-full min-h-[60px]"
+                            rows={2}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Textarea
+                            value={editForm.acceptanceCriteria || ''}
+                            onChange={(e) => setEditForm({ ...editForm, acceptanceCriteria: e.target.value })}
+                            placeholder="- Given...\n- When...\n- Then..."
+                            className="w-full min-h-[60px]"
+                            rows={2}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={editForm.priority || 'Medium'}
+                            onValueChange={(value) => setEditForm({ ...editForm, priority: value })}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Critical">Critical</SelectItem>
+                              <SelectItem value="High">High</SelectItem>
+                              <SelectItem value="Medium">Medium</SelectItem>
+                              <SelectItem value="Low">Low</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={editForm.status || 'Not Started'}
+                            onValueChange={(value) => setEditForm({ ...editForm, status: value })}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Not Started">Not Started</SelectItem>
+                              <SelectItem value="In Progress">In Progress</SelectItem>
+                              <SelectItem value="Completed">Completed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (!editForm.title?.trim()) {
+                                  toast.error('Title is required')
+                                  return
+                                }
+                                
+                                const updatedStories = localStories.map(s => {
+                                  if (s.id === story.id) {
+                                    return {
+                                      ...editForm,
+                                      user_role: editForm.userRole,
+                                      acceptance_criteria: editForm.acceptanceCriteria
+                                    }
+                                  }
+                                  return s
+                                })
+                                setLocalStories(updatedStories)
+                                onChange(updatedStories)
+                                setEditingId(null)
+                                setEditForm(null)
+                                toast.success('User story saved')
+                              }}
+                              className="h-8 w-8 p-0 text-green-500"
+                            >
+                              <Check className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                // Check if this is a new story (original has no title) and user didn't add a title
+                                const isNewStory = !story.title && !story.description
+                                if (isNewStory && !editForm.title?.trim()) {
+                                  // Remove the new empty story from local state only
+                                  setLocalStories(localStories.filter(s => s.id !== story.id))
+                                } else {
+                                  // Just cancel editing for existing stories
+                                  // Reset the form to original values
+                                }
+                                setEditingId(null)
+                                setEditForm(null)
+                              }}
+                              className="h-8 w-8 p-0 text-destructive"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  }
                   
                   return (
                     <TableRow 
@@ -381,7 +525,7 @@ export default function UserStoriesTable({
                           ) : (
                             <ChevronRight className="w-4 h-4 text-muted-foreground" />
                           )}
-                          {story.title}
+                          {story.title || 'Untitled Story'}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -415,7 +559,10 @@ export default function UserStoriesTable({
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleEdit(story)}
+                            onClick={() => {
+                              setEditingId(story.id)
+                              setEditForm(story)
+                            }}
                             className="h-8 w-8 p-0"
                             disabled={editingId !== null}
                           >
@@ -450,7 +597,7 @@ export default function UserStoriesTable({
 
       {/* Features Panel for Selected User Story */}
       {selectedStoryId && (() => {
-        const selectedStory = userStories.find(s => s.id === selectedStoryId)
+        const selectedStory = localStories.find(s => s.id === selectedStoryId)
         if (!selectedStory) return null
         
         const storyFeatures = getFeaturesForStory(selectedStoryId)
@@ -527,12 +674,14 @@ export default function UserStoriesTable({
                 // Keep existing feature
                 featuresToSave.push(existingFeature)
               } else {
-                // Create new feature
+                // Create new feature - get moduleId from the selected user story
+                const selectedStory = userStories.find(s => s.id === selectedStoryId)
                 const newFeature: FeatureTask = {
                   id: crypto.randomUUID(),
                   title: String(featureName),
                   description: '',
                   userStoryId: selectedStoryId,
+                  moduleId: selectedStory?.moduleId || undefined, // Include moduleId from the parent story
                   priority: 'Medium',
                   status: 'Not Started'
                 } as FeatureTask
@@ -712,140 +861,6 @@ export default function UserStoriesTable({
       })()}
 
 
-      {/* Edit User Story Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl bg-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-xl text-primary">Edit User Story</DialogTitle>
-            <DialogDescription>
-              Define who will use this feature and what acceptance criteria must be met.
-            </DialogDescription>
-          </DialogHeader>
-          
-          {editingStory && (
-            <div className="space-y-4">
-              <div>
-                <Label>Title</Label>
-                <Input
-                  value={editingStory.title}
-                  onChange={(e) => setEditingStory({ ...editingStory, title: e.target.value })}
-                  className="bg-input-background border-primary/30"
-                />
-              </div>
-
-              <div>
-                <Label>User/Role <span className="text-red-500">*</span></Label>
-                <Input
-                  value={getUserRole(editingStory)}
-                  onChange={(e) => setEditingStory({ ...editingStory, userRole: e.target.value, user_role: e.target.value })}
-                  className="bg-input-background border-primary/30"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Who will interact with this feature? Include access levels or permissions if needed.
-                </p>
-              </div>
-
-              <div>
-                <Label>Description <span className="text-red-500">*</span></Label>
-                <Textarea
-                  value={editingStory.description}
-                  onChange={(e) => setEditingStory({ ...editingStory, description: e.target.value })}
-                  className="bg-input-background border-primary/30 min-h-[100px]"
-                />
-              </div>
-
-              <div>
-                <Label>Acceptance Criteria</Label>
-                <Textarea
-                  value={getAcceptanceCriteria(editingStory)}
-                  onChange={(e) => setEditingStory({ 
-                    ...editingStory, 
-                    acceptanceCriteria: e.target.value,
-                    acceptance_criteria: e.target.value
-                  })}
-                  className="bg-input-background border-primary/30 min-h-[120px]"
-                  placeholder="- Given...\n- When...\n- Then..."
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Conditions that define when this feature is complete or working correctly.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Priority</Label>
-                  <Select 
-                    value={editingStory.priority} 
-                    onValueChange={(value) => setEditingStory({ 
-                      ...editingStory, 
-                      priority: value as 'High' | 'Medium' | 'Low' 
-                    })}
-                  >
-                    <SelectTrigger className="bg-input-background border-primary/30">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="High">High</SelectItem>
-                      <SelectItem value="Medium">Medium</SelectItem>
-                      <SelectItem value="Low">Low</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label>Status</Label>
-                  <Select 
-                    value={editingStory.status} 
-                    onValueChange={(value) => setEditingStory({ 
-                      ...editingStory, 
-                      status: value as 'Not Started' | 'In Progress' | 'Completed' 
-                    })}
-                  >
-                    <SelectTrigger className="bg-input-background border-primary/30">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Not Started">Not Started</SelectItem>
-                      <SelectItem value="In Progress">In Progress</SelectItem>
-                      <SelectItem value="Completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {modules.length > 0 && (
-                <div>
-                  <Label>Module</Label>
-                  <Select 
-                    value={editingStory.moduleId || ''} 
-                    onValueChange={(value) => setEditingStory({ ...editingStory, moduleId: value })}
-                  >
-                    <SelectTrigger className="bg-input-background border-primary/30">
-                      <SelectValue placeholder="Select a module" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {modules.map(module => (
-                        <SelectItem key={module.id} value={module.id}>
-                          {module.moduleName || (module as any).module_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit} className="bg-primary hover:bg-primary/90">
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

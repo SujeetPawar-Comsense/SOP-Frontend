@@ -444,18 +444,14 @@ export const modulesAPI = {
   },
 
   save: async (projectId: string, modules: any[]) => {
-    await supabase
-      .from('modules')
-      .delete()
-      .eq('project_id', projectId)
-
     const { data, error } = await supabase
       .from('modules')
-      .insert(
+      .upsert(
         modules.map(module => ({
           ...module,
           project_id: projectId
-        }))
+        })),
+        { onConflict: 'id' }
       )
       .select()
 
