@@ -17,7 +17,7 @@ import { ScrollArea } from './ui/scroll-area'
 import { toast } from 'sonner'
 import { supabase } from '../utils/supabaseClient'
 import { ModuleFeature } from './ExcelUtils'
-import { modulesAPI, featuresAPI, userStoriesAPI } from '../utils/api'
+import { modulesAPI } from '../utils/api'
 
 interface AIGeneralEnhancementProps {
   modules: ModuleFeature[]
@@ -108,156 +108,64 @@ export default function AIGeneralEnhancement({
 
       const result = await response.json()
       
-      if (result.success && result.data) {
-        // Check if the enhancement request is about business rules
-        const isBusinessRulesEnhancement = enhancementRequest.toLowerCase().includes('business rule') || 
-                                          enhancementRequest.toLowerCase().includes('business logic')
-        
-        // Merge enhanced modules back into the full list
-        const enhancedModuleIds = new Set(result.data.map((m: any) => m.id))
-        const mergedModules = modules.map(module => {
-          if (enhancedModuleIds.has(module.id)) {
-            // Find the enhanced version
-            const enhanced = result.data.find((m: any) => m.id === module.id)
-            return enhanced || module
+      if (result.success) {
+        // Data has been saved in the backend, show success message with counts
+        if (result.saved) {
+          const counts: string[] = []
+          if (result.saved.modules > 0) {
+            counts.push(`${result.saved.modules} module${result.saved.modules !== 1 ? 's' : ''}`)
           }
-          return module
-        })
-        
-        // Save the enhanced modules and their related data to Supabase
-        try {
-          // Transform modules to backend format (snake_case)
-          const modulesForBackend = mergedModules.map(module => {
-            const moduleName = (module as any).module_name || module.moduleName || ''
-            const businessImpact = (module as any).business_impact || module.businessImpact || ''
-            
-            return {
-              id: module.id,
-              module_name: moduleName,
-              description: module.description || '',
-              priority: module.priority || 'Medium',
-              business_impact: businessImpact,
-              dependencies: Array.isArray(module.dependencies) 
-                ? module.dependencies.join(', ') 
-                : (module.dependencies || ''),
-              status: module.status || 'Not Started'
-            }
-          })
-          
-          await modulesAPI.save(projectId, modulesForBackend)
-          
-          // Save enhanced user stories and features from the enhanced modules
-          const allUserStories: any[] = []
-          const allFeatures: any[] = []
-          
-          for (const enhancedModule of result.data) {
-            // Process user stories
-            if (enhancedModule.userStories && Array.isArray(enhancedModule.userStories)) {
-              for (const userStory of enhancedModule.userStories) {
-                allUserStories.push({
-                  id: userStory.id,
-                  title: userStory.title,
-                  user_role: userStory.userRole || userStory.user_role,
-                  description: userStory.description || '',
-                  module_id: enhancedModule.id,
-                  acceptance_criteria: Array.isArray(userStory.acceptanceCriteria) 
-                    ? userStory.acceptanceCriteria.join('\n')
-                    : (userStory.acceptanceCriteria || ''),
-                  priority: userStory.priority || 'Medium',
-                  status: userStory.status || 'Not Started'
-                })
-                
-                // Process features for this user story
-                if (userStory.features && Array.isArray(userStory.features)) {
-                  for (const feature of userStory.features) {
-                    allFeatures.push({
-                      id: feature.id,
-                      title: feature.featureName || feature.title || feature.name,
-                      description: feature.taskDescription || feature.description || '',
-                      module_id: enhancedModule.id,
-                      user_story_id: userStory.id,
-                      priority: feature.priority || 'Medium',
-                      status: feature.status || 'Not Started',
-                      business_rules: feature.business_rules || feature.businessRules || '',
-                      estimated_hours: feature.estimated_hours || feature.estimatedHours || null,
-                      assignee: feature.assignee || null
-                    })
-                  }
-                }
-              }
-            }
+          if (result.saved.userStories > 0) {
+            counts.push(`${result.saved.userStories} user ${result.saved.userStories !== 1 ? 'stories' : 'story'}`)
+          }
+          if (result.saved.features > 0) {
+            counts.push(`${result.saved.features} feature${result.saved.features !== 1 ? 's' : ''}`)
           }
           
-          // Save user stories if any were enhanced
-          if (allUserStories.length > 0) {
-            await userStoriesAPI.save(projectId, allUserStories)
-          }
-          
-          // Save features if any were enhanced
-          if (allFeatures.length > 0) {
-            await featuresAPI.save(projectId, allFeatures)
-          }
-          
-          // If this is a business rules enhancement, also check for additional features with business rules
-          if (isBusinessRulesEnhancement) {
-            const additionalFeatures: any[] = []
-            
-            // Check for any features that weren't already saved but have business rules
-            // (This handles edge cases where features might be directly attached to modules)
-            for (const enhancedModule of result.data) {
-              if (enhancedModule.features && Array.isArray(enhancedModule.features)) {
-                for (const feature of enhancedModule.features) {
-                  if ((feature.business_rules || feature.businessRules) && 
-                      !allFeatures.some(f => f.id === feature.id)) {
-                    additionalFeatures.push({
-                      id: feature.id,
-                      title: feature.featureName || feature.title || feature.name,
-                      description: feature.taskDescription || feature.description || '',
-                      module_id: enhancedModule.id,
-                      user_story_id: feature.userStoryId || feature.user_story_id || null,
-                      priority: feature.priority || 'Medium',
-                      status: feature.status || 'Not Started',
-                      business_rules: feature.business_rules || feature.businessRules || '',
-                      estimated_hours: feature.estimated_hours || feature.estimatedHours || null,
-                      assignee: feature.assignee || null
-                    })
-                  }
-                }
-              }
-            }
-            
-            // Save additional features with business rules if any were found
-            if (additionalFeatures.length > 0) {
-              try {
-                await featuresAPI.save(projectId, additionalFeatures)
-                const totalFeatures = allFeatures.length + additionalFeatures.length
-                toast.success(`Enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''} with ${allUserStories.length} user stories and ${totalFeatures} features!`)
-              } catch (featuresError) {
-                console.error('Failed to save additional features with business rules:', featuresError)
-                toast.success(`Enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''}!`)
-              }
-            } else {
-              const counts: string[] = []
-              if (result.data.length > 0) counts.push(`${result.data.length} module${result.data.length !== 1 ? 's' : ''}`)
-              if (allUserStories.length > 0) counts.push(`${allUserStories.length} user ${allUserStories.length !== 1 ? 'stories' : 'story'}`)
-              if (allFeatures.length > 0) counts.push(`${allFeatures.length} feature${allFeatures.length !== 1 ? 's' : ''}`)
-              toast.success(`Successfully enhanced ${counts.join(', ')}!`)
-            }
+          if (counts.length > 0) {
+            toast.success(`Successfully enhanced and saved ${counts.join(', ')}!`)
           } else {
-            // Show success message with counts of what was enhanced
-            const counts: string[] = []
-            if (result.data.length > 0) counts.push(`${result.data.length} module${result.data.length !== 1 ? 's' : ''}`)
-            if (allUserStories.length > 0) counts.push(`${allUserStories.length} user ${allUserStories.length !== 1 ? 'stories' : 'story'}`)
-            if (allFeatures.length > 0) counts.push(`${allFeatures.length} feature${allFeatures.length !== 1 ? 's' : ''}`)
-            toast.success(`Successfully enhanced and saved ${counts.length > 0 ? counts.join(', ') : 'modules'}!`)
+            toast.success('Enhancement completed successfully!')
           }
-        } catch (saveError) {
-          console.error('Failed to save enhanced modules to database:', saveError)
-          toast.warning('Modules enhanced but failed to save to database. Please try saving manually.')
+        } else {
+          toast.success('Modules enhanced successfully!')
         }
         
-        // Always call onEnhanced to update the UI
-        onEnhanced(mergedModules)
+        // Process the enhanced data for UI update
+        if (result.data) {
+          // Normalize the enhanced modules to match frontend format
+          const normalizedModules = result.data.map((m: any) => ({
+            id: m.id,
+            moduleName: m.moduleName || m.module_name || '',
+            description: m.description || m.moduleDescription || '',
+            priority: m.priority || 'Medium',
+            businessImpact: m.businessImpact || m.business_impact || '',
+            dependencies: m.dependencies || '',
+            status: m.status || 'Not Started',
+            // Include user stories and features if present for display
+            userStories: m.userStories,
+            features: m.features
+          }))
+          
+          // Merge enhanced modules back into the full list
+          const enhancedModuleIds = new Set(normalizedModules.map((m: any) => m.id))
+          const mergedModules = modules.map(module => {
+            if (enhancedModuleIds.has(module.id)) {
+              // Find the enhanced version
+              const enhanced = normalizedModules.find((m: any) => m.id === module.id)
+              return enhanced || module
+            }
+            return module
+          })
+          
+          // Call onEnhanced to update the parent component
+          onEnhanced(mergedModules)
+        } else {
+          // If no data in response, just refresh by calling onEnhanced with existing modules
+          // The parent should reload data from the server
+          onEnhanced(modules)
+        }
+        
         setShowDialog(false)
         setEnhancementRequest('')
         setSelectedModules(new Set())

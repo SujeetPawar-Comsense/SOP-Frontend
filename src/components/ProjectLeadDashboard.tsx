@@ -504,6 +504,18 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   const saveModules = async (modulesList: ModuleFeature[]) => {
     setSaving(true)
     try {
+      // Check if this is coming from AI enhancement (modules have userStories property)
+      const isFromEnhancement = modulesList.some((m: any) => m.userStories !== undefined)
+      
+      if (isFromEnhancement) {
+        // Data was already saved by backend during enhancement
+        // Just update local state and reload to get all related data
+        setModules(modulesList)
+        // Reload all data to ensure we have the latest user stories and features
+        await loadProjectData()
+        return
+      }
+      
       // Transform modules to backend format (snake_case)
       const modulesForBackend = modulesList.map(module => {
         const moduleName = (module as any).module_name || module.moduleName || ''
