@@ -17,7 +17,7 @@ import { ScrollArea } from './ui/scroll-area'
 import { toast } from 'sonner'
 import { supabase } from '../utils/supabaseClient'
 import { ModuleFeature } from './ExcelUtils'
-import { modulesAPI, featuresAPI } from '../utils/api'
+import { modulesAPI, featuresAPI, userStoriesAPI } from '../utils/api'
 
 interface AIGeneralEnhancementProps {
   modules: ModuleFeature[]
@@ -124,7 +124,7 @@ export default function AIGeneralEnhancement({
           return module
         })
         
-        // Save the enhanced modules to Supabase
+        // Save the enhanced modules and their related data to Supabase
         try {
           // Transform modules to backend format (snake_case)
           const modulesForBackend = mergedModules.map(module => {
@@ -146,16 +146,70 @@ export default function AIGeneralEnhancement({
           
           await modulesAPI.save(projectId, modulesForBackend)
           
-          // If this is a business rules enhancement, also check for features with business rules
+          // Save enhanced user stories and features from the enhanced modules
+          const allUserStories: any[] = []
+          const allFeatures: any[] = []
+          
+          for (const enhancedModule of result.data) {
+            // Process user stories
+            if (enhancedModule.userStories && Array.isArray(enhancedModule.userStories)) {
+              for (const userStory of enhancedModule.userStories) {
+                allUserStories.push({
+                  id: userStory.id,
+                  title: userStory.title,
+                  user_role: userStory.userRole || userStory.user_role,
+                  description: userStory.description || '',
+                  module_id: enhancedModule.id,
+                  acceptance_criteria: Array.isArray(userStory.acceptanceCriteria) 
+                    ? userStory.acceptanceCriteria.join('\n')
+                    : (userStory.acceptanceCriteria || ''),
+                  priority: userStory.priority || 'Medium',
+                  status: userStory.status || 'Not Started'
+                })
+                
+                // Process features for this user story
+                if (userStory.features && Array.isArray(userStory.features)) {
+                  for (const feature of userStory.features) {
+                    allFeatures.push({
+                      id: feature.id,
+                      title: feature.featureName || feature.title || feature.name,
+                      description: feature.taskDescription || feature.description || '',
+                      module_id: enhancedModule.id,
+                      user_story_id: userStory.id,
+                      priority: feature.priority || 'Medium',
+                      status: feature.status || 'Not Started',
+                      business_rules: feature.business_rules || feature.businessRules || '',
+                      estimated_hours: feature.estimated_hours || feature.estimatedHours || null,
+                      assignee: feature.assignee || null
+                    })
+                  }
+                }
+              }
+            }
+          }
+          
+          // Save user stories if any were enhanced
+          if (allUserStories.length > 0) {
+            await userStoriesAPI.save(projectId, allUserStories)
+          }
+          
+          // Save features if any were enhanced
+          if (allFeatures.length > 0) {
+            await featuresAPI.save(projectId, allFeatures)
+          }
+          
+          // If this is a business rules enhancement, also check for additional features with business rules
           if (isBusinessRulesEnhancement) {
-            const allFeatures: any[] = []
+            const additionalFeatures: any[] = []
             
-            // Extract features with business rules from enhanced modules
+            // Check for any features that weren't already saved but have business rules
+            // (This handles edge cases where features might be directly attached to modules)
             for (const enhancedModule of result.data) {
               if (enhancedModule.features && Array.isArray(enhancedModule.features)) {
                 for (const feature of enhancedModule.features) {
-                  if (feature.business_rules || feature.businessRules) {
-                    allFeatures.push({
+                  if ((feature.business_rules || feature.businessRules) && 
+                      !allFeatures.some(f => f.id === feature.id)) {
+                    additionalFeatures.push({
                       id: feature.id,
                       title: feature.featureName || feature.title || feature.name,
                       description: feature.taskDescription || feature.description || '',
@@ -170,46 +224,32 @@ export default function AIGeneralEnhancement({
                   }
                 }
               }
-              
-              // Also check if user stories have features with business rules
-              if (enhancedModule.userStories && Array.isArray(enhancedModule.userStories)) {
-                for (const userStory of enhancedModule.userStories) {
-                  if (userStory.features && Array.isArray(userStory.features)) {
-                    for (const feature of userStory.features) {
-                      if (feature.business_rules || feature.businessRules) {
-                        allFeatures.push({
-                          id: feature.id,
-                          title: feature.featureName || feature.title || feature.name,
-                          description: feature.taskDescription || feature.description || '',
-                          module_id: enhancedModule.id,
-                          user_story_id: userStory.id,
-                          priority: feature.priority || 'Medium',
-                          status: feature.status || 'Not Started',
-                          business_rules: feature.business_rules || feature.businessRules || '',
-                          estimated_hours: feature.estimated_hours || feature.estimatedHours || null,
-                          assignee: feature.assignee || null
-                        })
-                      }
-                    }
-                  }
-                }
-              }
             }
             
-            // Save features with business rules if any were found
-            if (allFeatures.length > 0) {
+            // Save additional features with business rules if any were found
+            if (additionalFeatures.length > 0) {
               try {
-                await featuresAPI.save(projectId, allFeatures)
-                toast.success(`Enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''} and saved ${allFeatures.length} feature${allFeatures.length !== 1 ? 's' : ''} with business rules!`)
+                await featuresAPI.save(projectId, additionalFeatures)
+                const totalFeatures = allFeatures.length + additionalFeatures.length
+                toast.success(`Enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''} with ${allUserStories.length} user stories and ${totalFeatures} features!`)
               } catch (featuresError) {
-                console.error('Failed to save features with business rules:', featuresError)
-                toast.success(`Enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''}! (Features save failed)`)
+                console.error('Failed to save additional features with business rules:', featuresError)
+                toast.success(`Enhanced ${result.data.length} module${result.data.length !== 1 ? 's' : ''}!`)
               }
             } else {
-              toast.success(`Successfully enhanced and saved ${result.data.length} module${result.data.length !== 1 ? 's' : ''}!`)
+              const counts: string[] = []
+              if (result.data.length > 0) counts.push(`${result.data.length} module${result.data.length !== 1 ? 's' : ''}`)
+              if (allUserStories.length > 0) counts.push(`${allUserStories.length} user ${allUserStories.length !== 1 ? 'stories' : 'story'}`)
+              if (allFeatures.length > 0) counts.push(`${allFeatures.length} feature${allFeatures.length !== 1 ? 's' : ''}`)
+              toast.success(`Successfully enhanced ${counts.join(', ')}!`)
             }
           } else {
-            toast.success(`Successfully enhanced and saved ${result.data.length} module${result.data.length !== 1 ? 's' : ''}!`)
+            // Show success message with counts of what was enhanced
+            const counts: string[] = []
+            if (result.data.length > 0) counts.push(`${result.data.length} module${result.data.length !== 1 ? 's' : ''}`)
+            if (allUserStories.length > 0) counts.push(`${allUserStories.length} user ${allUserStories.length !== 1 ? 'stories' : 'story'}`)
+            if (allFeatures.length > 0) counts.push(`${allFeatures.length} feature${allFeatures.length !== 1 ? 's' : ''}`)
+            toast.success(`Successfully enhanced and saved ${counts.length > 0 ? counts.join(', ') : 'modules'}!`)
           }
         } catch (saveError) {
           console.error('Failed to save enhanced modules to database:', saveError)
