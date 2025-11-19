@@ -84,11 +84,17 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
   }
 
   const handleSubcategoryRuleChange = (categoryId: string, subcategoryId: string, rule: string) => {
-    // Store the text in state for real-time updates
+    // Only store the text in state for real-time updates
+    // Don't call onChange here - wait for the Save button click
     const key = `${categoryId}-${subcategoryId}`
     setEditingRuleText(prev => ({ ...prev, [key]: rule }))
+  }
+
+  const handleSaveSubcategoryRule = (categoryId: string, subcategoryId: string) => {
+    const key = `${categoryId}-${subcategoryId}`
+    const rule = editingRuleText[key] || ''
     
-    // Update the config
+    // Update the config when Save is clicked
     const updatedCategories = config.categories.map(category => {
       if (category.id === categoryId) {
         return {
@@ -104,6 +110,14 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
     onChange({
       ...config,
       categories: updatedCategories,
+    })
+    
+    // Clear the editing state
+    setEditingSubcategory(null)
+    setEditingRuleText(prev => {
+      const newState = { ...prev }
+      delete newState[key]
+      return newState
     })
   }
 
@@ -236,11 +250,17 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
   }
 
   const handleCustomSubcategoryRuleChange = (categoryId: string, subcategoryId: string, rule: string) => {
-    // Store the text in state for real-time updates
+    // Only store the text in state for real-time updates
+    // Don't call onChange here - wait for the Save button click
     const key = `${categoryId}-${subcategoryId}`
     setEditingRuleText(prev => ({ ...prev, [key]: rule }))
+  }
+
+  const handleSaveCustomSubcategoryRule = (categoryId: string, subcategoryId: string) => {
+    const key = `${categoryId}-${subcategoryId}`
+    const rule = editingRuleText[key] || ''
     
-    // Update the config
+    // Update the config when Save is clicked
     const updatedCategories = config.categories.map(category => {
       if (category.id === categoryId) {
         return {
@@ -256,6 +276,14 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
     onChange({
       ...config,
       categories: updatedCategories,
+    })
+    
+    // Clear the editing state
+    setEditingSubcategory(null)
+    setEditingRuleText(prev => {
+      const newState = { ...prev }
+      delete newState[key]
+      return newState
     })
   }
 
@@ -527,7 +555,7 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                 <div className="flex gap-2">
                                   <Button
                                     size="sm"
-                                    onClick={() => setEditingSubcategory(null)}
+                                    onClick={() => handleSaveSubcategoryRule(category.id, subcategory.id)}
                                     className="bg-primary hover:bg-primary/90"
                                   >
                                     Save
@@ -535,7 +563,16 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => setEditingSubcategory(null)}
+                                    onClick={() => {
+                                      // Clear the editing state without saving
+                                      const key = `${category.id}-${subcategory.id}`
+                                      setEditingSubcategory(null)
+                                      setEditingRuleText(prev => {
+                                        const newState = { ...prev }
+                                        delete newState[key]
+                                        return newState
+                                      })
+                                    }}
                                     className="border-primary/30"
                                   >
                                     Cancel
@@ -659,7 +696,7 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                 <div className="flex gap-2">
                                   <Button
                                     size="sm"
-                                    onClick={() => setEditingSubcategory(null)}
+                                    onClick={() => handleSaveCustomSubcategoryRule(category.id, subcategory.id)}
                                     className="bg-primary hover:bg-primary/90"
                                   >
                                     Save
@@ -667,7 +704,16 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => setEditingSubcategory(null)}
+                                    onClick={() => {
+                                      // Clear the editing state without saving
+                                      const key = `${category.id}-${subcategory.id}`
+                                      setEditingSubcategory(null)
+                                      setEditingRuleText(prev => {
+                                        const newState = { ...prev }
+                                        delete newState[key]
+                                        return newState
+                                      })
+                                    }}
                                     className="border-primary/30"
                                   >
                                     Cancel
