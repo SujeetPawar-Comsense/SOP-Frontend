@@ -125,25 +125,66 @@ export default function AIUserStoriesEnhancement({
 
       const result = await response.json()
       
-      if (result.success && result.data) {
-        // Merge enhanced stories back into the full list
-        const enhancedStoryIds = new Set(result.data.map((s: UserStory) => s.id))
-        const mergedStories = userStories.map(story => {
-          if (enhancedStoryIds.has(story.id)) {
-            // Find the enhanced version
-            const enhanced = result.data.find((s: UserStory) => s.id === story.id)
-            return enhanced || story
+      if (result.success) {
+        // Data has been saved in the backend, show success message with counts
+        if (result.saved) {
+          const counts: string[] = []
+          if (result.saved.userStories > 0) {
+            counts.push(`${result.saved.userStories} user ${result.saved.userStories !== 1 ? 'stories' : 'story'}`)
           }
-          return story
-        })
+          if (result.saved.features > 0) {
+            counts.push(`${result.saved.features} feature${result.saved.features !== 1 ? 's' : ''}`)
+          }
+          
+          if (counts.length > 0) {
+            toast.success(`Successfully enhanced and saved ${counts.join(' and ')}!`)
+          } else {
+            toast.success('Enhancement completed successfully!')
+          }
+        } else {
+          toast.success('User stories enhanced successfully!')
+        }
         
-        // Also add any new stories that were generated
-        const existingIds = new Set(userStories.map(s => s.id))
-        const newStories = result.data.filter((s: UserStory) => !existingIds.has(s.id))
-        const finalStories = [...mergedStories, ...newStories]
+        // Process the enhanced data for UI update
+        if (result.data && result.data.length > 0) {
+          // Normalize the enhanced stories to match frontend format
+          const normalizedStories = result.data.map((story: any) => ({
+            id: story.id,
+            title: story.title,
+            userRole: story.userRole || story.user_role || 'User',
+            description: story.description || '',
+            acceptanceCriteria: story.acceptanceCriteria || story.acceptance_criteria || '',
+            moduleId: story.moduleId || story.module_id,
+            priority: story.priority || 'Medium',
+            status: story.status || 'Not Started',
+            // Include features if present for display
+            features: story.features
+          }))
+          
+          // Merge enhanced stories back into the full list
+          const enhancedStoryIds = new Set(normalizedStories.map((s: UserStory) => s.id))
+          const mergedStories = userStories.map(story => {
+            if (enhancedStoryIds.has(story.id)) {
+              // Find the enhanced version
+              const enhanced = normalizedStories.find((s: UserStory) => s.id === story.id)
+              return enhanced || story
+            }
+            return story
+          })
+          
+          // Also add any new stories that were generated
+          const existingIds = new Set(userStories.map(s => s.id))
+          const newStories = normalizedStories.filter((s: UserStory) => !existingIds.has(s.id))
+          const finalStories = [...mergedStories, ...newStories]
+          
+          // Call onEnhanced to update the parent component
+          onEnhanced(finalStories)
+        } else {
+          // If no data in response, just refresh by calling onEnhanced with existing stories
+          // The parent should reload data from the server
+          onEnhanced(userStories)
+        }
         
-        toast.success(`Successfully enhanced ${result.data.length} user ${result.data.length !== 1 ? 'stories' : 'story'}!`)
-        onEnhanced(finalStories)
         setShowDialog(false)
         setEnhancementRequest('')
         setSelectedStories(new Set())

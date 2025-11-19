@@ -545,6 +545,18 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
   }
 
   const saveUserStories = async (stories: UserStory[]) => {
+    // Check if this is coming from AI enhancement (stories have features property)
+    const isFromEnhancement = stories.some((s: any) => s.features !== undefined)
+    
+    if (isFromEnhancement) {
+      // Data was already saved by backend during enhancement
+      // Just update local state and reload to get all related data
+      setUserStories(stories)
+      // Reload all data to ensure we have the latest features
+      await loadProjectData()
+      return
+    }
+    
     // Filter out stories that are incomplete (empty title and description)
     const validStories = stories.filter(story => 
       story.title?.trim() || story.description?.trim()
