@@ -814,7 +814,6 @@ export const vibePromptsAPI = {
   generate: async (
     projectId: string, 
     developmentType: DevelopmentType | string, 
-    previousOutputs: string[] = [],
     selectedModuleIds?: string[],
     selectedFeatureIds?: string[]
   ) => {
@@ -830,7 +829,6 @@ export const vibePromptsAPI = {
       body: JSON.stringify({
         projectId,
         developmentType,
-        previousOutputs,
         selectedModuleIds: selectedModuleIds || [],
         selectedFeatureIds: selectedFeatureIds || []
       })

@@ -199,7 +199,6 @@ export default function VibeEngineerDashboard({ projectId }: VibeEngineerDashboa
       const prompt = await vibePromptsAPI.generate(
         projectId, 
         developmentType,
-        [], // previousOutputs will be fetched by backend
         selectedModuleIds,
         selectedFeatureIds
       )
