@@ -21,6 +21,7 @@ import { FeatureTask } from './FeaturesTasksEditor'
 import { cn } from './ui/utils'
 import { toast } from 'sonner'
 import { supabase } from '../utils/supabaseClient'
+import { featuresAPI } from '../utils/api'
 
 interface FeatureManagementCardProps {
   userStoryTitle: string
@@ -114,23 +115,53 @@ export default function FeatureManagementCard({
     rf => !existingFeatureTitles.includes(rf.toLowerCase())
   )
 
-  const handleAddCustomFeature = () => {
+  const handleAddCustomFeature = async () => {
     if (!customFeatureName.trim()) {
       toast.error('Please enter a feature name')
       return
     }
 
-    if (onFeatureAdd) {
-      onFeatureAdd({
+    if (!projectId) {
+      // If no projectId, fall back to local state update only
+      if (onFeatureAdd) {
+        onFeatureAdd({
+          title: customFeatureName,
+          description: '',
+          userStoryId: userStoryId,
+          priority: 'Medium',
+          status: 'Not Started',
+          estimatedHours: 0
+        })
+        setCustomFeatureName('')
+        toast.success('Feature added successfully')
+      }
+      return
+    }
+
+    try {
+      // Call API to save the feature
+      const newFeature = {
         title: customFeatureName,
         description: '',
         userStoryId: userStoryId,
         priority: 'Medium',
         status: 'Not Started',
         estimatedHours: 0
-      })
-      setCustomFeatureName('')
-      toast.success('Feature added successfully')
+      }
+
+      const response = await featuresAPI.addSingle(projectId, newFeature)
+      
+      if (response.feature) {
+        // Update local state with the saved feature
+        if (onFeatureAdd) {
+          onFeatureAdd(response.feature)
+        }
+        setCustomFeatureName('')
+        toast.success('Feature added and saved successfully')
+      }
+    } catch (error: any) {
+      console.error('Failed to add feature:', error)
+      toast.error(error.message || 'Failed to add feature')
     }
   }
 
@@ -152,7 +183,7 @@ export default function FeatureManagementCard({
     }
   }
 
-  const handleAddSelectedFeatures = () => {
+  const handleAddSelectedFeatures = async () => {
     if (selectedFeatures.size === 0) {
       toast.error('Please select at least one feature')
       return
@@ -161,22 +192,72 @@ export default function FeatureManagementCard({
     setIsAddingFeatures(true)
     const featuresToAdd = Array.from(selectedFeatures)
     
-    featuresToAdd.forEach((featureName) => {
-      if (onFeatureAdd) {
-        onFeatureAdd({
-          title: featureName,
-          description: '',
-          userStoryId: userStoryId,
-          priority: 'Medium',
-          status: 'Not Started',
-          estimatedHours: 0
-        })
-      }
-    })
+    if (!projectId) {
+      // If no projectId, fall back to local state update only
+      featuresToAdd.forEach((featureName) => {
+        if (onFeatureAdd) {
+          onFeatureAdd({
+            title: featureName,
+            description: '',
+            userStoryId: userStoryId,
+            priority: 'Medium',
+            status: 'Not Started',
+            estimatedHours: 0
+          })
+        }
+      })
+      setSelectedFeatures(new Set())
+      setIsAddingFeatures(false)
+      toast.success(`Added ${featuresToAdd.length} features successfully`)
+      return
+    }
 
-    setSelectedFeatures(new Set())
-    setIsAddingFeatures(false)
-    toast.success(`Added ${featuresToAdd.length} features successfully`)
+    try {
+      // Add features one by one via API
+      let successCount = 0
+      const errors: string[] = []
+
+      for (const featureName of featuresToAdd) {
+        try {
+          const newFeature = {
+            title: featureName,
+            description: '',
+            userStoryId: userStoryId,
+            priority: 'Medium',
+            status: 'Not Started',
+            estimatedHours: 0
+          }
+
+          const response = await featuresAPI.addSingle(projectId, newFeature)
+          
+          if (response.feature) {
+            // Update local state with the saved feature
+            if (onFeatureAdd) {
+              onFeatureAdd(response.feature)
+            }
+            successCount++
+          }
+        } catch (error: any) {
+          console.error(`Failed to add feature "${featureName}":`, error)
+          errors.push(featureName)
+        }
+      }
+
+      setSelectedFeatures(new Set())
+      
+      if (successCount > 0) {
+        toast.success(`Added ${successCount} feature${successCount > 1 ? 's' : ''} successfully`)
+      }
+      
+      if (errors.length > 0) {
+        toast.error(`Failed to add ${errors.length} feature${errors.length > 1 ? 's' : ''}: ${errors.join(', ')}`)
+      }
+    } catch (error: any) {
+      console.error('Failed to add features:', error)
+      toast.error(error.message || 'Failed to add features')
+    } finally {
+      setIsAddingFeatures(false)
+    }
   }
 
   const getStatusIcon = (status: string) => {

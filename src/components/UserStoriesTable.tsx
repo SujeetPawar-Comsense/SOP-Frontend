@@ -29,7 +29,8 @@ import {
   ArrowUpDown,
   Copy,
   FileText,
-  Zap
+  Zap,
+  Loader2
 } from 'lucide-react'
 import { Checkbox } from './ui/checkbox'
 import { UserStory } from './UserStoriesEditor'
@@ -76,6 +77,7 @@ export default function UserStoriesTable({
   const [customFeatureName, setCustomFeatureName] = useState('')
   const [selectedFeatureIds, setSelectedFeatureIds] = useState<Set<string>>(new Set())
   const [customFeatures, setCustomFeatures] = useState<string[]>([])
+  const [isAddingFeature, setIsAddingFeature] = useState(false)
 
   // Helper function to get normalized userRole
   const getUserRole = (story: UserStory | any): string => {
@@ -184,6 +186,11 @@ export default function UserStoriesTable({
   const handleStoryClick = (storyId: string) => {
     if (editingId) return // Don't allow selection while editing
     
+    console.log('Story clicked:', storyId)
+    const story = localStories.find(s => s.id === storyId)
+    console.log('Found story:', story)
+    console.log('ProjectId available:', projectId)
+    
     // If clicking the same story, deselect it
     if (selectedStoryId === storyId) {
       setSelectedStoryId(null)
@@ -195,6 +202,7 @@ export default function UserStoriesTable({
     
     // Select the new story
     setSelectedStoryId(storyId)
+    console.log('Story selected, features panel should be visible')
   }
 
   // Scroll to features card when a story is selected
@@ -464,13 +472,14 @@ export default function UserStoriesTable({
                                   return
                                 }
                                 
+                                const updatedStory = {
+                                  ...editForm,
+                                  user_role: editForm.userRole,
+                                  acceptance_criteria: editForm.acceptanceCriteria
+                                }
                                 const updatedStories = localStories.map(s => {
                                   if (s.id === story.id) {
-                                    return {
-                                      ...editForm,
-                                      user_role: editForm.userRole,
-                                      acceptance_criteria: editForm.acceptanceCriteria
-                                    }
+                                    return updatedStory
                                   }
                                   return s
                                 })
@@ -478,6 +487,12 @@ export default function UserStoriesTable({
                                 onChange(updatedStories)
                                 setEditingId(null)
                                 setEditForm(null)
+                                
+                                // If this was the selected story, keep it selected
+                                if (selectedStoryId === story.id) {
+                                  console.log('Updated selected story, features panel should now be available')
+                                }
+                                
                                 toast.success('User story saved')
                               }}
                               className="h-8 w-8 p-0 text-green-500"
@@ -598,7 +613,26 @@ export default function UserStoriesTable({
       {/* Features Panel for Selected User Story */}
       {selectedStoryId && (() => {
         const selectedStory = localStories.find(s => s.id === selectedStoryId)
-        if (!selectedStory) return null
+        if (!selectedStory) {
+          console.log('Selected story not found in localStories')
+          return null
+        }
+        
+        // Check if this is a new unsaved story
+        const isUnsavedStory = !selectedStory.title || selectedStory.title.trim() === ''
+        if (isUnsavedStory) {
+          return (
+            <Card className="border-primary/30 bg-card/50 rounded-lg mt-4">
+              <CardContent className="py-8 text-center">
+                <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+                <p className="text-lg font-medium mb-2">User Story Not Saved</p>
+                <p className="text-muted-foreground">
+                  Please save the user story first by clicking the checkmark button before adding features.
+                </p>
+              </CardContent>
+            </Card>
+          )
+        }
         
         const storyFeatures = getFeaturesForStory(selectedStoryId)
         const moduleName = getModuleName(selectedStory.moduleId || (selectedStory as any).module_id)
@@ -613,21 +647,79 @@ export default function UserStoriesTable({
           return selectedFeatureIds.has(featureId)
         })
         
-        const handleAddCustomFeature = () => {
-          if (customFeatureName.trim()) {
-            setCustomFeatures([...customFeatures, customFeatureName.trim()])
-            setCustomFeatureName('')
+        const handleAddCustomFeature = async () => {
+          console.log('Adding custom feature:', customFeatureName)
+          if (!customFeatureName.trim()) {
+            toast.warning('Please enter a feature name')
+            return
+          }
+          
+          if (!projectId || !selectedStoryId) {
+            toast.error(`Cannot add feature: Missing ${!projectId ? 'project ID' : 'user story ID'}`)
+            return
+          }
+          
+          const newFeatureName = customFeatureName.trim()
+          setIsAddingFeature(true)
+          
+          try {
+            // Get the selected user story to get its moduleId
+            const selectedStory = userStories.find(s => s.id === selectedStoryId)
+            
+            const newFeature = {
+              title: newFeatureName,
+              description: '',
+              userStoryId: selectedStoryId,
+              moduleId: selectedStory?.moduleId || undefined,
+              priority: 'Medium',
+              status: 'Not Started',
+              estimatedHours: 0
+            }
+            
+            console.log('Calling API to add feature:', newFeature)
+            const response = await featuresAPI.addSingle(projectId, newFeature)
+            
+            if (response.feature) {
+              // Add to local state for immediate UI update
+              setCustomFeatures([...customFeatures, newFeatureName])
+              setCustomFeatureName('')
+              
+              // Automatically select the new custom feature
+              const newSelected = new Set(selectedFeatureIds)
+              newSelected.add(newFeatureName)
+              setSelectedFeatureIds(newSelected)
+              
+              console.log('Feature added successfully:', response.feature)
+              toast.success('Feature added and saved successfully')
+              
+              // Optionally reload features to ensure consistency
+              if (onFeaturesChange) {
+                const featuresResponse = await featuresAPI.get(projectId)
+                if (featuresResponse.features) {
+                  onFeaturesChange(featuresResponse.features)
+                }
+              }
+            }
+          } catch (error: any) {
+            console.error('Failed to add feature:', error)
+            toast.error(error.message || 'Failed to add feature')
+          } finally {
+            setIsAddingFeature(false)
           }
         }
         
         const handleToggleFeature = (featureName: string) => {
+          console.log('Toggling feature:', featureName)
           const newSelected = new Set(selectedFeatureIds)
           if (newSelected.has(featureName)) {
             newSelected.delete(featureName)
+            console.log('Feature deselected:', featureName)
           } else {
             newSelected.add(featureName)
+            console.log('Feature selected:', featureName)
           }
           setSelectedFeatureIds(newSelected)
+          console.log('Current selected features:', Array.from(newSelected))
         }
         
         const handleSelectAll = () => {
@@ -645,15 +737,30 @@ export default function UserStoriesTable({
         }
         
         const handleSaveChanges = async () => {
+          console.log('=== SAVE FEATURES DEBUG ===')
+          console.log('ProjectId:', projectId)
+          console.log('SelectedStoryId:', selectedStoryId)
+          console.log('Selected Features:', Array.from(selectedFeatureIds))
+          console.log('Custom Features:', customFeatures)
+          
           if (!projectId || !selectedStoryId) {
-            toast.error('Cannot save features: Missing project or user story ID')
+            toast.error(`Cannot save features: Missing ${!projectId ? 'project ID' : 'user story ID'}`)
+            console.error('Missing IDs:', { projectId, selectedStoryId })
+            return
+          }
+          
+          if (selectedFeatureIds.size === 0) {
+            toast.warning('No features selected to save')
+            console.warn('No features selected')
             return
           }
           
           try {
+            console.log('Fetching current features from API...')
             // Reload features first to get latest data
             const featuresResponse = await featuresAPI.get(projectId)
             const currentFeatures = featuresResponse.features || []
+            console.log('Current features from API:', currentFeatures)
             
             // Get existing features for this user story
             const existingFeatures = currentFeatures.filter((f: any) => {
@@ -668,7 +775,9 @@ export default function UserStoriesTable({
             const featuresToSave: FeatureTask[] = []
             
             // Add selected features
+            console.log('Processing selected features...')
             Array.from(selectedFeatureIds).forEach(featureName => {
+              console.log('Processing feature:', featureName)
               const existingFeature = existingFeatures.find((f: any) => f.title === featureName)
               if (existingFeature) {
                 // Keep existing feature
@@ -699,10 +808,13 @@ export default function UserStoriesTable({
               .concat(featuresToSave)
             
             console.log('Saving features:', allProjectFeatures.length, 'total features')
+            console.log('Features to save:', allProjectFeatures)
             
             // Save features via API
             if (projectId) {
+              console.log('Calling featuresAPI.save with projectId:', projectId)
               const savedResponse = await featuresAPI.save(projectId, allProjectFeatures)
+              console.log('API response:', savedResponse)
               
               // Notify parent component to reload features
               if (onFeaturesChange && savedResponse.features) {
@@ -769,10 +881,20 @@ export default function UserStoriesTable({
                   />
                   <Button
                     onClick={handleAddCustomFeature}
+                    disabled={isAddingFeature}
                     className="bg-primary hover:bg-primary/90 text-primary-foreground"
                   >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add
+                    {isAddingFeature ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Adding...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
@@ -848,7 +970,10 @@ export default function UserStoriesTable({
                   Reset Features
                 </Button>
                 <Button
-                  onClick={handleSaveChanges}
+                  onClick={() => {
+                    console.log('Save Changes button clicked')
+                    handleSaveChanges()
+                  }}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   <Save className="w-4 h-4 mr-2" />

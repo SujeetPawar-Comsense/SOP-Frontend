@@ -839,6 +839,40 @@ export const featuresAPI = {
       console.error('Error saving features:', error)
       throw error
     }
+  },
+
+  addSingle: async (projectId: string, feature: any) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token')
+      }
+
+      console.log('➕ Adding single feature to:', `${API_BASE_URL}/api/projects/${projectId}/features/single`)
+      console.log('📝 Feature details:', feature)
+
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/features/single`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(feature)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to add feature' }))
+        console.error('❌ Feature add error:', response.status, errorData)
+        throw new Error(errorData.message || 'Failed to add feature')
+      }
+
+      const data = await response.json()
+      console.log('✅ Feature added successfully:', data)
+      return { feature: data.feature }
+    } catch (error) {
+      console.error('Error adding feature:', error)
+      throw error
+    }
   }
 }
 

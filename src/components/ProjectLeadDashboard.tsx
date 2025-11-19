@@ -540,8 +540,13 @@ export default function ProjectLeadDashboard({ projectId, userRole }: ProjectLea
     
     setSaving(true)
     try {
-      await apiClient.post(`/projects/${projectId}/user-stories`, { userStories: validStories })
-      setUserStories(validStories)
+      const response = await apiClient.post(`/projects/${projectId}/user-stories`, { userStories: validStories })
+      // Use the response data which contains the saved stories with proper database IDs
+      if (response.userStories) {
+        setUserStories(response.userStories)
+      } else {
+        setUserStories(validStories)
+      }
       toast.success('User stories saved')
     } catch (error: any) {
       toast.error('Failed to save user stories')
