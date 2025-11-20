@@ -791,7 +791,7 @@ export default function ModulesTable({
                   <div className="space-y-3">
                     <Label className="text-sm text-primary flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4" />
-                      Additional Business Rules ({moduleSelectedRules.length})
+                      Business Rules ({moduleSelectedRules.length})
                     </Label>
                     <div className="grid grid-cols-1 gap-2">
                       {moduleSelectedRules.map((rule, idx) => (
