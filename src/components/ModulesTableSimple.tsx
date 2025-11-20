@@ -201,19 +201,40 @@ export default function ModulesTable({
       setLoadingBusinessRules(true)
       try {
         const response = await businessRulesAPI.getByModule(projectId, moduleId)
+        const fetchedRules = response.businessRules || []
+        
+        // Update both selectedBusinessRules and moduleBusinessRules
+        setSelectedBusinessRules({
+          ...selectedBusinessRules,
+          [moduleId]: fetchedRules
+        })
         setModuleBusinessRules({
           ...moduleBusinessRules,
-          [moduleId]: response.businessRules || []
+          [moduleId]: fetchedRules
         })
       } catch (error: any) {
         console.error('Error fetching business rules:', error)
         toast.error('Failed to load business rules for this module')
+        
+        // Initialize with empty array on error
+        setSelectedBusinessRules({
+          ...selectedBusinessRules,
+          [moduleId]: []
+        })
         setModuleBusinessRules({
           ...moduleBusinessRules,
           [moduleId]: []
         })
       } finally {
         setLoadingBusinessRules(false)
+      }
+    } else {
+      // Initialize with empty array if no projectId
+      if (!selectedBusinessRules[moduleId]) {
+        setSelectedBusinessRules({
+          ...selectedBusinessRules,
+          [moduleId]: []
+        })
       }
     }
   }
@@ -264,28 +285,65 @@ export default function ModulesTable({
 
 
   // Add a custom business rule to the selected module
-  const handleAddCustomRule = () => {
-    if (!selectedModuleId || !customBusinessRule.trim()) return
+  const handleAddCustomRule = async () => {
+    if (!selectedModuleId || !customBusinessRule.trim() || !projectId) return
     
     const currentRules = selectedBusinessRules[selectedModuleId] || []
-    if (currentRules.includes(customBusinessRule.trim())) return // Don't add duplicates
+    if (currentRules.includes(customBusinessRule.trim())) {
+      toast.error('This business rule already exists')
+      return // Don't add duplicates
+    }
     
+    const newRules = [...currentRules, customBusinessRule.trim()]
+    
+    // Update local state immediately for better UX
     setSelectedBusinessRules({
       ...selectedBusinessRules,
-      [selectedModuleId]: [...currentRules, customBusinessRule.trim()]
+      [selectedModuleId]: newRules
     })
     setCustomBusinessRule('')
+    
+    // Save to backend
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, newRules)
+      toast.success('Business rule added successfully')
+    } catch (error) {
+      // Revert on error
+      setSelectedBusinessRules({
+        ...selectedBusinessRules,
+        [selectedModuleId]: currentRules
+      })
+      toast.error('Failed to add business rule')
+      console.error('Error adding business rule:', error)
+    }
   }
 
   // Delete a business rule from the selected module
-  const handleDeleteRule = (ruleIndex: number) => {
-    if (!selectedModuleId) return
+  const handleDeleteRule = async (ruleIndex: number) => {
+    if (!selectedModuleId || !projectId) return
     
     const currentRules = selectedBusinessRules[selectedModuleId] || []
+    const newRules = currentRules.filter((_, idx) => idx !== ruleIndex)
+    
+    // Update local state immediately for better UX
     setSelectedBusinessRules({
       ...selectedBusinessRules,
-      [selectedModuleId]: currentRules.filter((_, idx) => idx !== ruleIndex)
+      [selectedModuleId]: newRules
     })
+    
+    // Save to backend
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, newRules)
+      toast.success('Business rule removed successfully')
+    } catch (error) {
+      // Revert on error
+      setSelectedBusinessRules({
+        ...selectedBusinessRules,
+        [selectedModuleId]: currentRules
+      })
+      toast.error('Failed to remove business rule')
+      console.error('Error removing business rule:', error)
+    }
   }
 
   // Start editing a business rule
@@ -295,18 +353,37 @@ export default function ModulesTable({
   }
 
   // Save edited business rule
-  const handleSaveEditedRule = () => {
-    if (!selectedModuleId || editingRuleIndex === null) return
+  const handleSaveEditedRule = async () => {
+    if (!selectedModuleId || editingRuleIndex === null || !projectId) return
     
     const currentRules = selectedBusinessRules[selectedModuleId] || []
+    const newRules = currentRules.map((r, idx) => 
+      idx === editingRuleIndex ? editingRuleText.trim() : r
+    )
+    
+    // Update local state immediately for better UX
     setSelectedBusinessRules({
       ...selectedBusinessRules,
-      [selectedModuleId]: currentRules.map((r, idx) => 
-        idx === editingRuleIndex ? editingRuleText.trim() : r
-      )
+      [selectedModuleId]: newRules
     })
     setEditingRuleIndex(null)
     setEditingRuleText('')
+    
+    // Save to backend
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, newRules)
+      toast.success('Business rule updated successfully')
+    } catch (error) {
+      // Revert on error
+      setSelectedBusinessRules({
+        ...selectedBusinessRules,
+        [selectedModuleId]: currentRules
+      })
+      setEditingRuleIndex(editingRuleIndex)
+      setEditingRuleText(editingRuleText)
+      toast.error('Failed to update business rule')
+      console.error('Error updating business rule:', error)
+    }
   }
 
   // Cancel editing business rule
@@ -316,29 +393,50 @@ export default function ModulesTable({
   }
 
   // Save business rules
-  const handleSaveBusinessRules = () => {
-    if (!selectedModuleId) return
+  const handleSaveBusinessRules = async () => {
+    if (!selectedModuleId || !projectId) return
     
     const selectedModule = modules.find(m => m.id === selectedModuleId)
     const moduleName = (selectedModule as any)?.module_name || selectedModule?.moduleName || 'Module'
-    const ruleCount = selectedBusinessRules[selectedModuleId]?.length || 0
+    const rules = selectedBusinessRules[selectedModuleId] || []
+    const ruleCount = rules.length
     
-    toast.success(`Business rules saved for "${moduleName}" with ${ruleCount} rule${ruleCount !== 1 ? 's' : ''}`)
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, rules)
+      toast.success(`Business rules saved for "${moduleName}" with ${ruleCount} rule${ruleCount !== 1 ? 's' : ''}`)
+    } catch (error) {
+      toast.error('Failed to save business rules')
+      console.error('Error saving business rules:', error)
+    }
   }
 
   // Reset all business rules for the current module
-  const handleResetBusinessRules = () => {
-    if (!selectedModuleId) return
+  const handleResetBusinessRules = async () => {
+    if (!selectedModuleId || !projectId) return
     
     const selectedModule = modules.find(m => m.id === selectedModuleId)
     const moduleName = (selectedModule as any)?.module_name || selectedModule?.moduleName || 'Module'
+    const currentRules = selectedBusinessRules[selectedModuleId] || []
     
+    // Update local state immediately for better UX
     setSelectedBusinessRules({
       ...selectedBusinessRules,
       [selectedModuleId]: []
     })
     
-    toast.success(`All business rules cleared for "${moduleName}"`)
+    // Save to backend
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, [])
+      toast.success(`All business rules cleared for "${moduleName}"`)
+    } catch (error) {
+      // Revert on error
+      setSelectedBusinessRules({
+        ...selectedBusinessRules,
+        [selectedModuleId]: currentRules
+      })
+      toast.error('Failed to clear business rules')
+      console.error('Error clearing business rules:', error)
+    }
   }
 
 
@@ -661,7 +759,7 @@ export default function ModulesTable({
                 )}
 
                 {/* Business Rules from API Section */}
-                {!loadingBusinessRules && extractedRules.length > 0 && (
+                {/* {!loadingBusinessRules && extractedRules.length > 0 && (
                   <div className="space-y-3">
                     <Label className="text-sm text-primary flex items-center gap-2">
                       <Shield className="w-4 h-4" />
@@ -679,7 +777,7 @@ export default function ModulesTable({
                       ))}
                     </div>
                   </div>
-                )}
+                )} */}
 
                 {/* No Rules Message */}
                 {!loadingBusinessRules && extractedRules.length === 0 && moduleSelectedRules.length === 0 && (

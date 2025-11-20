@@ -552,22 +552,105 @@ export const businessRulesAPI = {
   },
 
   getByModule: async (projectId: string, moduleId: string) => {
-    // Fetch features for this module and extract business rules
-    const { data, error } = await supabase
-      .from('features')
-      .select('business_rules')
-      .eq('project_id', projectId)
-      .eq('module_id', moduleId)
+    try {
+      // First check for the dedicated business rules record
+      const { data: rulesFeature, error: rulesError } = await supabase
+        .from('features')
+        .select('business_rules')
+        .eq('project_id', projectId)
+        .eq('module_id', moduleId)
+        .eq('title', '_module_business_rules')
+        .single()
 
-    if (error) throw error
+      if (rulesFeature && rulesFeature.business_rules) {
+        try {
+          // Try to parse as JSON array
+          const parsed = JSON.parse(rulesFeature.business_rules)
+          if (Array.isArray(parsed)) {
+            return { businessRules: parsed }
+          }
+        } catch {
+          // If not JSON, treat as single rule
+          return { businessRules: [rulesFeature.business_rules] }
+        }
+      }
+
+      // Fallback: fetch all features for this module and extract business rules
+      const { data, error } = await supabase
+        .from('features')
+        .select('business_rules')
+        .eq('project_id', projectId)
+        .eq('module_id', moduleId)
+        .neq('title', '_module_business_rules') // Exclude the dedicated record
+
+      if (error && error.code !== 'PGRST116') throw error
+      
+      // Extract unique business rules from features
+      const rules = (data || [])
+        .map((f: any) => f.business_rules)
+        .filter((rule: string) => rule && rule.trim() !== '')
+        .filter((rule: string, index: number, self: string[]) => self.indexOf(rule) === index) // Remove duplicates
+      
+      return { businessRules: rules }
+    } catch (error) {
+      console.error('Error fetching business rules by module:', error)
+      return { businessRules: [] }
+    }
+  },
+
+  saveByModule: async (projectId: string, moduleId: string, rules: string[]) => {
+    // For now, we'll store the business rules as a JSON string in a single feature record
+    // This is a temporary solution - ideally business rules should have their own table
     
-    // Extract unique business rules from features
-    const rules = (data || [])
-      .map((f: any) => f.business_rules)
-      .filter((rule: string) => rule && rule.trim() !== '')
-      .filter((rule: string, index: number, self: string[]) => self.indexOf(rule) === index) // Remove duplicates
-    
-    return { businessRules: rules }
+    try {
+      // First, try to find an existing "business rules" feature for this module
+      const { data: existingFeatures, error: fetchError } = await supabase
+        .from('features')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('module_id', moduleId)
+        .eq('title', '_module_business_rules')
+        .single()
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        throw fetchError
+      }
+
+      const businessRulesJson = JSON.stringify(rules)
+
+      if (existingFeatures) {
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from('features')
+          .update({
+            business_rules: businessRulesJson,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingFeatures.id)
+
+        if (updateError) throw updateError
+      } else {
+        // Create new record
+        const { error: insertError } = await supabase
+          .from('features')
+          .insert({
+            project_id: projectId,
+            module_id: moduleId,
+            title: '_module_business_rules',
+            description: 'Business rules for this module',
+            business_rules: businessRulesJson,
+            priority: 'High',
+            status: 'Not Started'
+          })
+
+        if (insertError) throw insertError
+      }
+
+      return { success: true, businessRules: rules }
+    } catch (error) {
+      console.error('Error saving business rules by module:', error)
+      throw error
+    }
   }
 }
 
