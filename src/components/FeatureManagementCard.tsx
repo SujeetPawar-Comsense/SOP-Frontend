@@ -21,6 +21,7 @@ import { FeatureTask } from './FeaturesTasksEditor'
 import { cn } from './ui/utils'
 import { toast } from 'sonner'
 import { supabase } from '../utils/supabaseClient'
+import { featuresAPI } from '../utils/api'
 
 interface FeatureManagementCardProps {
   userStoryTitle: string
@@ -51,6 +52,7 @@ export default function FeatureManagementCard({
   const [recommendedFeatures, setRecommendedFeatures] = useState<string[]>([])
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false)
   const [recommendationError, setRecommendationError] = useState<string | null>(null)
+  const [showRecommendations, setShowRecommendations] = useState(false)
 
   // Fetch recommendations from API
   useEffect(() => {
@@ -102,8 +104,10 @@ export default function FeatureManagementCard({
       }
     }
 
-    fetchRecommendations()
-  }, [projectId, userStoryId])
+    if (showRecommendations) {
+      fetchRecommendations()
+    }
+  }, [projectId, userStoryId, showRecommendations])
   
   // Filter out already added features
   const existingFeatureTitles = features.map(f => f.title.toLowerCase())
@@ -111,23 +115,53 @@ export default function FeatureManagementCard({
     rf => !existingFeatureTitles.includes(rf.toLowerCase())
   )
 
-  const handleAddCustomFeature = () => {
+  const handleAddCustomFeature = async () => {
     if (!customFeatureName.trim()) {
       toast.error('Please enter a feature name')
       return
     }
 
-    if (onFeatureAdd) {
-      onFeatureAdd({
+    if (!projectId) {
+      // If no projectId, fall back to local state update only
+      if (onFeatureAdd) {
+        onFeatureAdd({
+          title: customFeatureName,
+          description: '',
+          userStoryId: userStoryId,
+          priority: 'Medium',
+          status: 'Not Started',
+          estimatedHours: 0
+        })
+        setCustomFeatureName('')
+        toast.success('Feature added successfully')
+      }
+      return
+    }
+
+    try {
+      // Call API to save the feature
+      const newFeature = {
         title: customFeatureName,
         description: '',
         userStoryId: userStoryId,
         priority: 'Medium',
         status: 'Not Started',
         estimatedHours: 0
-      })
-      setCustomFeatureName('')
-      toast.success('Feature added successfully')
+      }
+
+      const response = await featuresAPI.addSingle(projectId, newFeature)
+      
+      if (response.feature) {
+        // Update local state with the saved feature
+        if (onFeatureAdd) {
+          onFeatureAdd(response.feature)
+        }
+        setCustomFeatureName('')
+        toast.success('Feature added and saved successfully')
+      }
+    } catch (error: any) {
+      console.error('Failed to add feature:', error)
+      toast.error(error.message || 'Failed to add feature')
     }
   }
 
@@ -149,30 +183,81 @@ export default function FeatureManagementCard({
     }
   }
 
-  const handleAddSelectedFeatures = () => {
+  const handleAddSelectedFeatures = async () => {
     if (selectedFeatures.size === 0) {
       toast.error('Please select at least one feature')
       return
     }
 
     setIsAddingFeatures(true)
+    const featuresToAdd = Array.from(selectedFeatures)
     
-    selectedFeatures.forEach(featureName => {
-      if (onFeatureAdd) {
-        onFeatureAdd({
-          title: featureName,
-          description: `Implement ${featureName} for ${userStoryTitle}`,
-          userStoryId: userStoryId,
-          priority: 'Medium',
-          status: 'Not Started',
-          estimatedHours: 0
-        })
-      }
-    })
+    if (!projectId) {
+      // If no projectId, fall back to local state update only
+      featuresToAdd.forEach((featureName) => {
+        if (onFeatureAdd) {
+          onFeatureAdd({
+            title: featureName,
+            description: '',
+            userStoryId: userStoryId,
+            priority: 'Medium',
+            status: 'Not Started',
+            estimatedHours: 0
+          })
+        }
+      })
+      setSelectedFeatures(new Set())
+      setIsAddingFeatures(false)
+      toast.success(`Added ${featuresToAdd.length} features successfully`)
+      return
+    }
 
-    toast.success(`Added ${selectedFeatures.size} features`)
-    setSelectedFeatures(new Set())
-    setIsAddingFeatures(false)
+    try {
+      // Add features one by one via API
+      let successCount = 0
+      const errors: string[] = []
+
+      for (const featureName of featuresToAdd) {
+        try {
+          const newFeature = {
+            title: featureName,
+            description: '',
+            userStoryId: userStoryId,
+            priority: 'Medium',
+            status: 'Not Started',
+            estimatedHours: 0
+          }
+
+          const response = await featuresAPI.addSingle(projectId, newFeature)
+          
+          if (response.feature) {
+            // Update local state with the saved feature
+            if (onFeatureAdd) {
+              onFeatureAdd(response.feature)
+            }
+            successCount++
+          }
+        } catch (error: any) {
+          console.error(`Failed to add feature "${featureName}":`, error)
+          errors.push(featureName)
+        }
+      }
+
+      setSelectedFeatures(new Set())
+      
+      if (successCount > 0) {
+        toast.success(`Added ${successCount} feature${successCount > 1 ? 's' : ''} successfully`)
+      }
+      
+      if (errors.length > 0) {
+        toast.error(`Failed to add ${errors.length} feature${errors.length > 1 ? 's' : ''}: ${errors.join(', ')}`)
+      }
+    } catch (error: any) {
+      console.error('Failed to add features:', error)
+      toast.error(error.message || 'Failed to add features')
+    } finally {
+      setIsAddingFeatures(false)
+    }
   }
 
   const getStatusIcon = (status: string) => {
@@ -186,7 +271,7 @@ export default function FeatureManagementCard({
     }
   }
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityColor = (priority: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (priority) {
       case 'High':
         return 'destructive'
@@ -206,10 +291,13 @@ export default function FeatureManagementCard({
           <div className="flex-1">
             <CardTitle className="text-xl bg-gradient-to-r from-primary to-cyan-400 bg-clip-text text-transparent flex items-center gap-2">
               <Layers className="w-5 h-5 text-primary" />
-              {userStoryTitle} - Feature Management
+              Features for: {userStoryTitle}
             </CardTitle>
             <CardDescription>
-              Select from recommended features or add custom features for this user story
+              {features.length > 0 
+                ? `${features.length} feature${features.length !== 1 ? 's' : ''} defined for this user story`
+                : 'No features defined yet for this user story'
+              }
             </CardDescription>
           </div>
           {!readOnly && projectId && (
@@ -224,121 +312,18 @@ export default function FeatureManagementCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Add Custom Feature */}
-        {!readOnly && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold">Add Custom Feature</h3>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Enter custom feature name..."
-                value={customFeatureName}
-                onChange={(e) => setCustomFeatureName(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    handleAddCustomFeature()
-                  }
-                }}
-                className="flex-1"
-              />
-              <Button
-                onClick={handleAddCustomFeature}
-                className="gap-2 bg-primary hover:bg-primary/90"
-              >
-                <Plus className="w-4 h-4" />
-                Add
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Recommended Features */}
-        {!readOnly && (
+        {/* Existing Features - Show First and Prominently */}
+        {features.length > 0 ? (
           <div className="space-y-3">
-            {isLoadingRecommendations ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                <span className="ml-2 text-sm text-muted-foreground">Loading recommendations...</span>
-              </div>
-            ) : recommendationError ? (
-              <div className="text-center py-4 text-sm text-yellow-500">
-                {recommendationError}
-              </div>
-            ) : availableRecommendedFeatures.length > 0 ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold">
-                    Recommended Features ({availableRecommendedFeatures.length})
-                  </h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSelectAll}
-                    className="gap-2"
-                  >
-                    <Check className="w-4 h-4" />
-                    Select All ({availableRecommendedFeatures.length})
-                  </Button>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {availableRecommendedFeatures.map((feature) => (
-                    <div
-                      key={feature}
-                      className={cn(
-                        "p-3 rounded-lg border cursor-pointer transition-all hover:border-primary/50",
-                        selectedFeatures.has(feature) 
-                          ? "border-primary bg-primary/10" 
-                          : "border-border/50 bg-background/50"
-                      )}
-                      onClick={() => handleToggleFeature(feature)}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                          checked={selectedFeatures.has(feature)}
-                          onCheckedChange={() => handleToggleFeature(feature)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <span className="text-sm">{feature}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : null}
-
-            {selectedFeatures.size > 0 && (
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedFeatures(new Set())}
-                >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Reset Features
-                </Button>
-                <Button
-                  onClick={handleAddSelectedFeatures}
-                  disabled={isAddingFeatures}
-                  className="gap-2 bg-primary hover:bg-primary/90"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add {selectedFeatures.size} Selected Feature{selectedFeatures.size !== 1 ? 's' : ''}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Existing Features */}
-        {features.length > 0 && (
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold">
+            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
               Current Features ({features.length})
             </h3>
             <div className="space-y-2">
               {features.map((feature) => (
                 <div
                   key={feature.id}
-                  className="p-4 rounded-lg border border-border/50 bg-background/50 hover:bg-accent/10 transition-colors"
+                  className="p-4 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -350,18 +335,15 @@ export default function FeatureManagementCard({
                         {getStatusIcon(feature.status)}
                       </div>
                       {feature.description && (
-                        <p className="text-sm text-muted-foreground">
-                          {feature.description}
-                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">{feature.description}</p>
                       )}
-                      {feature.estimatedHours && (
-                        <div className="text-xs text-muted-foreground mt-2">
-                          Est. {feature.estimatedHours}h
-                          {feature.assignee && ` • Assigned to: ${feature.assignee}`}
-                        </div>
-                      )}
+                      <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                        {feature.estimatedHours > 0 && (
+                          <span>Est: {feature.estimatedHours}h</span>
+                        )}
+                        <span>Status: {feature.status}</span>
+                      </div>
                     </div>
-                    
                     {!readOnly && (
                       <div className="flex gap-1">
                         <Button
@@ -369,6 +351,7 @@ export default function FeatureManagementCard({
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => onFeatureEdit?.(feature)}
+                          title="Edit Feature"
                         >
                           <Edit2 className="w-4 h-4" />
                         </Button>
@@ -377,6 +360,7 @@ export default function FeatureManagementCard({
                           size="icon"
                           className="h-8 w-8 text-destructive"
                           onClick={() => onFeatureDelete?.(feature.id)}
+                          title="Delete Feature"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -387,13 +371,133 @@ export default function FeatureManagementCard({
               ))}
             </div>
           </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-lg">
+            <Layers className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p className="font-medium">No features found for this user story</p>
+            <p className="text-sm mt-2">Features may not be loaded yet or need to be added</p>
+          </div>
         )}
 
-        {features.length === 0 && availableRecommendedFeatures.length === 0 && !isLoadingRecommendations && (
-          <div className="text-center py-8 text-muted-foreground">
-            <Layers className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No features added yet</p>
-            <p className="text-sm mt-2">Start by adding custom features above</p>
+        {/* Add Custom Feature - Show after existing features */}
+        {!readOnly && (
+          <div className="space-y-2 border-t pt-4">
+            <h3 className="text-sm font-semibold text-muted-foreground">Add New Feature</h3>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Enter feature name..."
+                value={customFeatureName}
+                onChange={(e) => setCustomFeatureName(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    handleAddCustomFeature()
+                  }
+                }}
+                className="flex-1"
+              />
+              <Button
+                onClick={handleAddCustomFeature}
+                className="gap-2"
+                variant="outline"
+              >
+                <Plus className="w-4 h-4" />
+                Add Feature
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Recommended Features - Collapsible */}
+        {!readOnly && (
+          <div className="space-y-3">
+            <Button
+              variant="ghost"
+              onClick={() => setShowRecommendations(!showRecommendations)}
+              className="w-full justify-between"
+            >
+              <span className="text-sm font-semibold text-muted-foreground">
+                Suggested Features
+              </span>
+              <span className="text-xs">
+                {showRecommendations ? 'Hide' : 'Show'}
+              </span>
+            </Button>
+            
+            {showRecommendations && (
+              <>
+                {isLoadingRecommendations ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    <span className="ml-2 text-sm text-muted-foreground">Loading suggestions...</span>
+                  </div>
+                ) : availableRecommendedFeatures.length > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        Select features to add ({availableRecommendedFeatures.length} available)
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleSelectAll}
+                        className="text-xs"
+                      >
+                        Select All
+                      </Button>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {availableRecommendedFeatures.map((feature) => (
+                        <div
+                          key={feature}
+                          className={cn(
+                            "p-2 rounded border cursor-pointer transition-all text-sm",
+                            selectedFeatures.has(feature) 
+                              ? "border-primary bg-primary/10" 
+                              : "border-border/50 hover:border-primary/50"
+                          )}
+                          onClick={() => handleToggleFeature(feature)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={selectedFeatures.has(feature)}
+                              onCheckedChange={() => handleToggleFeature(feature)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <span className="text-xs">{feature}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {selectedFeatures.size > 0 && (
+                      <div className="flex justify-end gap-2 pt-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedFeatures(new Set())}
+                        >
+                          Clear
+                        </Button>
+                        <Button
+                          onClick={handleAddSelectedFeatures}
+                          disabled={isAddingFeatures}
+                          size="sm"
+                          className="gap-2"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Add {selectedFeatures.size} Selected
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-2">
+                    No additional suggestions available
+                  </p>
+                )}
+              </>
+            )}
           </div>
         )}
       </CardContent>

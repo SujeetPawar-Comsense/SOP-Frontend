@@ -74,13 +74,15 @@ export default function ProjectInformationForm({
   // Track which field is being cancelled (for confirmation dialog)
   const [cancellingField, setCancellingField] = useState<keyof ProjectInformation | null>(null)
   
-  // Track if viewing scope as JSON or formatted
-  const [viewScopeAsJson, setViewScopeAsJson] = useState(false)
+  // Track if editing scope
+  const [isEditingScope, setIsEditingScope] = useState(false)
 
   // Sync local state when data prop changes (e.g., from file parsing)
   useEffect(() => {
     setSavedValues(data)
     setEditingValues(data)
+    // Reset edit mode when data changes
+    setIsEditingScope(false)
   }, [data])
   
   // Helper to parse project scope safely
@@ -93,7 +95,7 @@ export default function ProjectInformationForm({
     }
   }
   
-  // Helper to format scope for display
+  // Helper to format scope for display/editing
   const formatScopeForDisplay = (scopeData: any) => {
     if (!scopeData) return ''
     
@@ -114,6 +116,49 @@ export default function ProjectInformationForm({
     }
     
     return formatted
+  }
+
+  // Helper to parse formatted text back to JSON structure
+  const parseFormattedScope = (formattedText: string) => {
+    const inScope: string[] = []
+    const outOfScope: string[] = []
+    
+    let currentSection: 'inScope' | 'outOfScope' | null = null
+    
+    const lines = formattedText.split('\n')
+    
+    for (const line of lines) {
+      const trimmed = line.trim()
+      
+      if (trimmed === '' || trimmed.startsWith('✅') || trimmed.startsWith('❌')) {
+        if (trimmed.includes('IN SCOPE')) {
+          currentSection = 'inScope'
+        } else if (trimmed.includes('OUT OF SCOPE')) {
+          currentSection = 'outOfScope'
+        }
+        continue
+      }
+      
+      if (trimmed.startsWith('•')) {
+        const item = trimmed.substring(1).trim()
+        if (item && currentSection) {
+          if (currentSection === 'inScope') {
+            inScope.push(item)
+          } else {
+            outOfScope.push(item)
+          }
+        }
+      } else if (trimmed && currentSection) {
+        // Handle lines without bullet points
+        if (currentSection === 'inScope') {
+          inScope.push(trimmed)
+        } else {
+          outOfScope.push(trimmed)
+        }
+      }
+    }
+    
+    return { inScope, outOfScope }
   }
 
   const handleFieldChange = (field: keyof ProjectInformation, value: string) => {
@@ -153,6 +198,10 @@ export default function ProjectInformationForm({
         ...editingValues,
         [cancellingField]: savedValues[cancellingField]
       })
+      // If canceling scope edit, also exit edit mode
+      if (cancellingField === 'projectScope') {
+        setIsEditingScope(false)
+      }
       setCancellingField(null)
     }
   }
@@ -317,89 +366,127 @@ export default function ProjectInformationForm({
             </Label>
             {(() => {
               // Try to parse as JSON and display formatted
+              let scopeData: any = null
+              let hasData = false
+              
               try {
-                const scopeData = JSON.parse(editingValues.projectScope || '{}')
-                const hasData = scopeData.inScope?.length > 0 || scopeData.outOfScope?.length > 0
-                
-                if (hasData) {
-                  return (
-                    <div className="space-y-4 p-4 border border-primary/30 rounded-lg bg-black/20">
-                      {scopeData.inScope && scopeData.inScope.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-green-400 mb-2">✅ In Scope:</h4>
-                          <ul className="space-y-1">
-                            {scopeData.inScope.map((item: string, idx: number) => (
-                              <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
-                                <span className="text-green-400 mt-1">•</span>
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {scopeData.outOfScope && scopeData.outOfScope.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-red-400 mb-2">❌ Out of Scope:</h4>
-                          <ul className="space-y-1">
-                            {scopeData.outOfScope.map((item: string, idx: number) => (
-                              <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
-                                <span className="text-red-400 mt-1">•</span>
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      <div className="flex justify-end pt-2 border-t border-primary/20">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            const jsonStr = JSON.stringify(scopeData, null, 2)
-                            handleFieldChange('projectScope', jsonStr)
-                          }}
-                          className="text-xs"
-                        >
-                          Edit as JSON
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                }
+                scopeData = JSON.parse(editingValues.projectScope || '{}')
+                hasData = scopeData.inScope?.length > 0 || scopeData.outOfScope?.length > 0
               } catch (e) {
-                // Not valid JSON or empty, show textarea
+                // Not valid JSON, will show textarea
               }
               
-              // Fallback to textarea
+              // Show formatted view if we have valid data AND not editing
+              if (hasData && !isEditingScope) {
+                return (
+                  <div className="space-y-4 p-4 border border-primary/30 rounded-lg bg-black/20">
+                    {scopeData.inScope && scopeData.inScope.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold text-green-400 mb-2">✅ In Scope:</h4>
+                        <ul className="space-y-1">
+                          {scopeData.inScope.map((item: string, idx: number) => (
+                            <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <span className="text-green-400 mt-1">•</span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {scopeData.outOfScope && scopeData.outOfScope.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold text-red-400 mb-2">❌ Out of Scope:</h4>
+                        <ul className="space-y-1">
+                          {scopeData.outOfScope.map((item: string, idx: number) => (
+                            <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <span className="text-red-400 mt-1">•</span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <div className="flex justify-end pt-2 border-t border-primary/20">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setIsEditingScope(true)
+                        }}
+                        className="text-xs"
+                      >
+                        Edit
+                      </Button>
+                    </div>
+                  </div>
+                )
+              }
+              
+              // Show textarea for editing
+              const displayText = hasData ? formatScopeForDisplay(scopeData) : editingValues.projectScope
+              
               return (
                 <>
                   <Textarea
                     id="projectScope"
-                    value={editingValues.projectScope}
-                    onChange={(e) => handleFieldChange('projectScope', e.target.value)}
-                    placeholder='Define what is included and excluded from the project scope...\n\nYou can use plain text or JSON format:\n{\n  "inScope": ["Feature 1", "Feature 2"],\n  "outOfScope": ["Feature 3"]\n}'
-                    rows={6}
-                    className="resize-none border-primary/30 focus:border-primary/50 font-mono text-sm"
+                    value={displayText}
+                    onChange={(e) => {
+                      // Store the formatted text temporarily
+                      const formattedText = e.target.value
+                      // Parse it back to JSON structure
+                      const parsed = parseFormattedScope(formattedText)
+                      // Convert to JSON string for storage
+                      const jsonStr = JSON.stringify(parsed)
+                      handleFieldChange('projectScope', jsonStr)
+                    }}
+                    placeholder='✅ IN SCOPE:\n• Feature 1\n• Feature 2\n\n❌ OUT OF SCOPE:\n• Feature 3'
+                    rows={8}
+                    className="resize-none border-primary/30 focus:border-primary/50 text-sm"
                   />
-                  <div className="flex justify-end">
-                    {hasChanges('projectScope') && (
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleCancelClick('projectScope')}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="default"
-                          onClick={() => handleSave('projectScope')}
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                      </div>
+                  <div className="flex justify-between items-center">
+                    {hasData && isEditingScope && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          // Revert to saved value and exit edit mode
+                          setEditingValues({
+                            ...editingValues,
+                            projectScope: savedValues.projectScope
+                          })
+                          setIsEditingScope(false)
+                        }}
+                        className="text-xs"
+                      >
+                        Cancel Edit
+                      </Button>
                     )}
+                    <div className="flex space-x-2 ml-auto">
+                      {hasChanges('projectScope') && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setIsEditingScope(false)
+                              handleCancelClick('projectScope')
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              setIsEditingScope(false)
+                              handleSave('projectScope')
+                            }}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </>
               )

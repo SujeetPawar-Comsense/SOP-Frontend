@@ -9,18 +9,22 @@ import { useAuth } from './AuthProvider';
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
+  onNeedVerification: () => void;
+  onForgotPassword: () => void;
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
+export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onNeedVerification, onForgotPassword }) => {
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setNeedsVerification(false);
     setLoading(true);
 
     try {
@@ -29,8 +33,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
       // Handle specific error types
       if (err.message?.includes('Invalid login credentials')) {
         setError('Invalid email or password. If you don\'t have an account yet, please sign up below.');
-      } else if (err.message?.includes('Email not confirmed')) {
+      } else if (err.message?.includes('verify your email') || 
+                 err.message?.includes('Email not confirmed')) {
         setError('Please verify your email address before signing in. Check your inbox for the confirmation email.');
+        setNeedsVerification(true);
       } else if (err.message?.includes('Email not found') || err.message?.includes('User not found')) {
         setError('No account found with this email. Please sign up to create an account.');
       } else {
@@ -68,6 +74,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
                     </button>
                   </div>
                 )}
+                {needsVerification && (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={onNeedVerification}
+                      className="text-green-400 hover:text-green-300 underline text-sm"
+                    >
+                      Resend verification email →
+                    </button>
+                  </div>
+                )}
               </AlertDescription>
             </Alert>
           )}
@@ -86,7 +103,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password" className="text-gray-300">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className="text-gray-300">Password</Label>
+              <button
+                type="button"
+                onClick={onForgotPassword}
+                className="text-xs text-green-400 hover:text-green-300 underline"
+              >
+                Forgot password?
+              </button>
+            </div>
             <Input
               id="password"
               type="password"

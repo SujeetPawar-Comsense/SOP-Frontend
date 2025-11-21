@@ -11,24 +11,67 @@ import { BusinessRulesConfig, RuleCategory, RuleSubcategory } from './BusinessRu
 import { ChevronDown, ChevronRight, Plus, X, CheckCircle2, Wand2, Loader2, Check } from 'lucide-react'
 import { toast } from 'sonner@2.0.3'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
+import { Checkbox } from './ui/checkbox'
+import AIBusinessRulesEnhancement from './AIBusinessRulesEnhancement'
 
 interface BusinessRulesEditorProps {
   config: BusinessRulesConfig
   onChange: (config: BusinessRulesConfig) => void
   availableModules?: Array<{ id: string; moduleName: string }>
+  projectId?: string
 }
 
-export default function BusinessRulesEditor({ config, onChange, availableModules = [] }: BusinessRulesEditorProps) {
+export default function BusinessRulesEditor({ config, onChange, availableModules = [], projectId }: BusinessRulesEditorProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [editingSubcategory, setEditingSubcategory] = useState<{ categoryId: string; subcategoryId: string } | null>(null)
   const [addingCustomSubcategory, setAddingCustomSubcategory] = useState<string | null>(null)
   const [newSubcategoryName, setNewSubcategoryName] = useState('')
   const [newSubcategoryExample, setNewSubcategoryExample] = useState('')
-  
-  // AI Magic state
-  const [showAIMagicDialog, setShowAIMagicDialog] = useState(false)
-  const [aiMagicStage, setAIMagicStage] = useState(0)
+  const [showModuleSelector, setShowModuleSelector] = useState<{ categoryId: string; subcategoryId: string; isCustom?: boolean } | null>(null)
+  const [editingRuleText, setEditingRuleText] = useState<{ [key: string]: string }>({})
+  const [selectedModulesInDialog, setSelectedModulesInDialog] = useState<Set<string>>(new Set())
+
+  // Auto-expand categories that have defined rules
+  useEffect(() => {
+    if (config.categories && config.categories.length > 0) {
+      const categoriesWithRules = config.categories
+        .filter(category => {
+          const hasDefinedRules = (category.subcategories || []).some(
+            sub => sub.userRule && sub.userRule.trim() !== ''
+          )
+          const hasCustomRules = (category.customSubcategories || []).some(
+            sub => sub.userRule && sub.userRule.trim() !== ''
+          )
+          return hasDefinedRules || hasCustomRules
+        })
+        .map(category => category.id)
+      
+      if (categoriesWithRules.length > 0) {
+        setExpandedCategories(new Set(categoriesWithRules))
+      }
+    }
+  }, [config.categories])
+
+  // Initialize selected modules when dialog opens
+  useEffect(() => {
+    if (showModuleSelector) {
+      const { categoryId, subcategoryId, isCustom } = showModuleSelector
+      const category = config.categories.find(c => c.id === categoryId)
+      if (category) {
+        const subcategories = isCustom ? category.customSubcategories : category.subcategories
+        const subcategory = subcategories?.find(s => s.id === subcategoryId)
+        const currentModuleNames = (subcategory as any)?.applicableTo || []
+        
+        // Convert module names to IDs
+        const currentModuleIds = currentModuleNames.map((name: string) => 
+          availableModules.find(m => m.moduleName === name)?.id
+        ).filter(Boolean) as string[]
+        
+        setSelectedModulesInDialog(new Set(currentModuleIds))
+      }
+    }
+  }, [showModuleSelector, config.categories, availableModules])
 
   const toggleCategory = (categoryId: string) => {
     const newExpanded = new Set(expandedCategories)
@@ -41,6 +84,17 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
   }
 
   const handleSubcategoryRuleChange = (categoryId: string, subcategoryId: string, rule: string) => {
+    // Only store the text in state for real-time updates
+    // Don't call onChange here - wait for the Save button click
+    const key = `${categoryId}-${subcategoryId}`
+    setEditingRuleText(prev => ({ ...prev, [key]: rule }))
+  }
+
+  const handleSaveSubcategoryRule = (categoryId: string, subcategoryId: string) => {
+    const key = `${categoryId}-${subcategoryId}`
+    const rule = editingRuleText[key] || ''
+    
+    // Update the config when Save is clicked
     const updatedCategories = config.categories.map(category => {
       if (category.id === categoryId) {
         return {
@@ -57,9 +111,156 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
       ...config,
       categories: updatedCategories,
     })
+    
+    // Clear the editing state
+    setEditingSubcategory(null)
+    setEditingRuleText(prev => {
+      const newState = { ...prev }
+      delete newState[key]
+      return newState
+    })
+  }
+
+  const handleAddModuleToSubcategory = (categoryId: string, subcategoryId: string, moduleId: string, isCustom: boolean = false) => {
+    const updatedCategories = config.categories.map(category => {
+      if (category.id === categoryId) {
+        if (isCustom) {
+          return {
+            ...category,
+            customSubcategories: (category.customSubcategories || []).map(sub => {
+              if (sub.id === subcategoryId) {
+                const currentModules = (sub as any).applicableTo || []
+                const module = availableModules.find(m => m.id === moduleId)
+                if (module && !currentModules.includes(module.moduleName)) {
+                  return { ...sub, applicableTo: [...currentModules, module.moduleName] }
+                }
+              }
+              return sub
+            }),
+          }
+        } else {
+          return {
+            ...category,
+            subcategories: (category.subcategories || []).map(sub => {
+              if (sub.id === subcategoryId) {
+                const currentModules = (sub as any).applicableTo || []
+                const module = availableModules.find(m => m.id === moduleId)
+                if (module && !currentModules.includes(module.moduleName)) {
+                  return { ...sub, applicableTo: [...currentModules, module.moduleName] }
+                }
+              }
+              return sub
+            }),
+          }
+        }
+      }
+      return category
+    })
+
+    onChange({
+      ...config,
+      categories: updatedCategories,
+    })
+    setShowModuleSelector(null)
+  }
+
+  const handleSaveSelectedModules = () => {
+    if (!showModuleSelector) return
+
+    const { categoryId, subcategoryId, isCustom } = showModuleSelector
+    const updatedCategories = config.categories.map(category => {
+      if (category.id === categoryId) {
+        if (isCustom) {
+          return {
+            ...category,
+            customSubcategories: (category.customSubcategories || []).map(sub => {
+              if (sub.id === subcategoryId) {
+                // Get module names for selected IDs
+                const selectedModuleNames = Array.from(selectedModulesInDialog)
+                  .map(id => availableModules.find(m => m.id === id)?.moduleName)
+                  .filter(Boolean) as string[]
+                
+                return { ...sub, applicableTo: selectedModuleNames }
+              }
+              return sub
+            }),
+          }
+        } else {
+          return {
+            ...category,
+            subcategories: (category.subcategories || []).map(sub => {
+              if (sub.id === subcategoryId) {
+                // Get module names for selected IDs
+                const selectedModuleNames = Array.from(selectedModulesInDialog)
+                  .map(id => availableModules.find(m => m.id === id)?.moduleName)
+                  .filter(Boolean) as string[]
+                
+                return { ...sub, applicableTo: selectedModuleNames }
+              }
+              return sub
+            }),
+          }
+        }
+      }
+      return category
+    })
+
+    onChange({
+      ...config,
+      categories: updatedCategories,
+    })
+    setShowModuleSelector(null)
+    setSelectedModulesInDialog(new Set())
+  }
+
+  const handleRemoveModuleFromSubcategory = (categoryId: string, subcategoryId: string, moduleName: string, isCustom: boolean = false) => {
+    const updatedCategories = config.categories.map(category => {
+      if (category.id === categoryId) {
+        if (isCustom) {
+          return {
+            ...category,
+            customSubcategories: (category.customSubcategories || []).map(sub => {
+              if (sub.id === subcategoryId) {
+                const currentModules = (sub as any).applicableTo || []
+                return { ...sub, applicableTo: currentModules.filter((m: string) => m !== moduleName) }
+              }
+              return sub
+            }),
+          }
+        } else {
+          return {
+            ...category,
+            subcategories: (category.subcategories || []).map(sub => {
+              if (sub.id === subcategoryId) {
+                const currentModules = (sub as any).applicableTo || []
+                return { ...sub, applicableTo: currentModules.filter((m: string) => m !== moduleName) }
+              }
+              return sub
+            }),
+          }
+        }
+      }
+      return category
+    })
+
+    onChange({
+      ...config,
+      categories: updatedCategories,
+    })
   }
 
   const handleCustomSubcategoryRuleChange = (categoryId: string, subcategoryId: string, rule: string) => {
+    // Only store the text in state for real-time updates
+    // Don't call onChange here - wait for the Save button click
+    const key = `${categoryId}-${subcategoryId}`
+    setEditingRuleText(prev => ({ ...prev, [key]: rule }))
+  }
+
+  const handleSaveCustomSubcategoryRule = (categoryId: string, subcategoryId: string) => {
+    const key = `${categoryId}-${subcategoryId}`
+    const rule = editingRuleText[key] || ''
+    
+    // Update the config when Save is clicked
     const updatedCategories = config.categories.map(category => {
       if (category.id === categoryId) {
         return {
@@ -75,6 +276,14 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
     onChange({
       ...config,
       categories: updatedCategories,
+    })
+    
+    // Clear the editing state
+    setEditingSubcategory(null)
+    setEditingRuleText(prev => {
+      const newState = { ...prev }
+      delete newState[key]
+      return newState
     })
   }
 
@@ -159,37 +368,6 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
     })
   }
 
-  // AI Magic stage progression
-  useEffect(() => {
-    if (!showAIMagicDialog) return
-
-    const stages = [
-      { duration: 1500, nextStage: 1 },
-      { duration: 2000, nextStage: 2 },
-      { duration: 1500, nextStage: 3 },
-    ]
-
-    if (aiMagicStage < stages.length) {
-      const timer = setTimeout(() => {
-        setAIMagicStage(aiMagicStage + 1)
-      }, stages[aiMagicStage].duration)
-
-      return () => clearTimeout(timer)
-    } else if (aiMagicStage === 3) {
-      // Close dialog after completing all stages
-      setTimeout(() => {
-        setShowAIMagicDialog(false)
-        setAIMagicStage(0)
-        toast.success('AI suggestions applied successfully!')
-      }, 500)
-    }
-  }, [showAIMagicDialog, aiMagicStage])
-
-  // Handle AI Magic button click
-  const handleAIMagic = () => {
-    setShowAIMagicDialog(true)
-    setAIMagicStage(0)
-  }
 
   return (
     <div className="space-y-6">
@@ -206,14 +384,11 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
               </CardTitle>
               <CardDescription>Configure where these business rules should apply</CardDescription>
             </div>
-            <Button
-              onClick={handleAIMagic}
-              size="sm"
-              className="gap-2 bg-gradient-to-r from-primary to-cyan-400 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
-            >
-              <Wand2 className="w-4 h-4" />
-              AI Magic
-            </Button>
+            <AIBusinessRulesEnhancement
+              config={config}
+              projectId={projectId}
+              onEnhanced={onChange}
+            />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -258,7 +433,8 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
 
       {/* Business Rules Categories */}
       <div className="space-y-3">
-        {config.categories.map(category => {
+        {config.categories && config.categories.length > 0 ? (
+          config.categories.map(category => {
           const counts = getRuleCounts(category)
           const isExpanded = expandedCategories.has(category.id)
 
@@ -328,12 +504,47 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground mb-2">{subcategory.example}</p>
+                            
+                            {/* Display applicable modules if available */}
+                            <div className="mb-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-xs font-semibold text-cyan-400">Applicable To:</p>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-5 w-5 p-0 hover:bg-cyan-500/20"
+                                  onClick={() => setShowModuleSelector({ categoryId: category.id, subcategoryId: subcategory.id, isCustom: false })}
+                                >
+                                  <Plus className="w-3 h-3 text-cyan-400" />
+                                </Button>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {((subcategory as any).applicableTo || []).map((module: string, idx: number) => (
+                                  <Badge 
+                                    key={idx} 
+                                    variant="outline" 
+                                    className="text-[10px] border-cyan-500/30 text-cyan-400 group hover:border-red-500/30"
+                                  >
+                                    {module}
+                                    <button
+                                      className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={() => handleRemoveModuleFromSubcategory(category.id, subcategory.id, module, false)}
+                                    >
+                                      <X className="w-2 h-2" />
+                                    </button>
+                                  </Badge>
+                                ))}
+                                {((subcategory as any).applicableTo || []).length === 0 && (
+                                  <span className="text-[10px] text-muted-foreground">No specific modules selected</span>
+                                )}
+                              </div>
+                            </div>
 
                             {editingSubcategory?.categoryId === category.id &&
                             editingSubcategory?.subcategoryId === subcategory.id ? (
                               <div className="space-y-2">
                                 <Textarea
-                                  value={subcategory.userRule || ''}
+                                  value={(editingRuleText[`${category.id}-${subcategory.id}`] ?? subcategory.userRule) || ''}
                                   onChange={(e) =>
                                     handleSubcategoryRuleChange(category.id, subcategory.id, e.target.value)
                                   }
@@ -344,7 +555,7 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                 <div className="flex gap-2">
                                   <Button
                                     size="sm"
-                                    onClick={() => setEditingSubcategory(null)}
+                                    onClick={() => handleSaveSubcategoryRule(category.id, subcategory.id)}
                                     className="bg-primary hover:bg-primary/90"
                                   >
                                     Save
@@ -352,7 +563,16 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => setEditingSubcategory(null)}
+                                    onClick={() => {
+                                      // Clear the editing state without saving
+                                      const key = `${category.id}-${subcategory.id}`
+                                      setEditingSubcategory(null)
+                                      setEditingRuleText(prev => {
+                                        const newState = { ...prev }
+                                        delete newState[key]
+                                        return newState
+                                      })
+                                    }}
                                     className="border-primary/30"
                                   >
                                     Cancel
@@ -370,12 +590,14 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                     size="sm"
                                     variant="outline"
                                     className="mt-1 border-primary/30"
-                                    onClick={() =>
+                                    onClick={() => {
+                                      const key = `${category.id}-${subcategory.id}`
+                                      setEditingRuleText(prev => ({ ...prev, [key]: subcategory.userRule || '' }))
                                       setEditingSubcategory({
                                         categoryId: category.id,
                                         subcategoryId: subcategory.id,
                                       })
-                                    }
+                                    }}
                                   >
                                     Define Business Rule
                                   </Button>
@@ -385,12 +607,14 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                     size="sm"
                                     variant="ghost"
                                     className="mt-2 text-primary hover:text-primary/80"
-                                    onClick={() =>
+                                    onClick={() => {
+                                      const key = `${category.id}-${subcategory.id}`
+                                      setEditingRuleText(prev => ({ ...prev, [key]: subcategory.userRule || '' }))
                                       setEditingSubcategory({
                                         categoryId: category.id,
                                         subcategoryId: subcategory.id,
                                       })
-                                    }
+                                    }}
                                   >
                                     Edit Rule
                                   </Button>
@@ -421,12 +645,47 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground mb-2">{subcategory.example}</p>
+                            
+                            {/* Display applicable modules if available */}
+                            <div className="mb-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-xs font-semibold text-cyan-400">Applicable To:</p>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-5 w-5 p-0 hover:bg-cyan-500/20"
+                                  onClick={() => setShowModuleSelector({ categoryId: category.id, subcategoryId: subcategory.id, isCustom: true })}
+                                >
+                                  <Plus className="w-3 h-3 text-cyan-400" />
+                                </Button>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {((subcategory as any).applicableTo || []).map((module: string, idx: number) => (
+                                  <Badge 
+                                    key={idx} 
+                                    variant="outline" 
+                                    className="text-[10px] border-cyan-500/30 text-cyan-400 group hover:border-red-500/30"
+                                  >
+                                    {module}
+                                    <button
+                                      className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={() => handleRemoveModuleFromSubcategory(category.id, subcategory.id, module, false)}
+                                    >
+                                      <X className="w-2 h-2" />
+                                    </button>
+                                  </Badge>
+                                ))}
+                                {((subcategory as any).applicableTo || []).length === 0 && (
+                                  <span className="text-[10px] text-muted-foreground">No specific modules selected</span>
+                                )}
+                              </div>
+                            </div>
 
                             {editingSubcategory?.categoryId === category.id &&
                             editingSubcategory?.subcategoryId === subcategory.id ? (
                               <div className="space-y-2">
                                 <Textarea
-                                  value={subcategory.userRule || ''}
+                                  value={(editingRuleText[`${category.id}-${subcategory.id}`] ?? subcategory.userRule) || ''}
                                   onChange={(e) =>
                                     handleCustomSubcategoryRuleChange(category.id, subcategory.id, e.target.value)
                                   }
@@ -437,7 +696,7 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                 <div className="flex gap-2">
                                   <Button
                                     size="sm"
-                                    onClick={() => setEditingSubcategory(null)}
+                                    onClick={() => handleSaveCustomSubcategoryRule(category.id, subcategory.id)}
                                     className="bg-primary hover:bg-primary/90"
                                   >
                                     Save
@@ -445,7 +704,16 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => setEditingSubcategory(null)}
+                                    onClick={() => {
+                                      // Clear the editing state without saving
+                                      const key = `${category.id}-${subcategory.id}`
+                                      setEditingSubcategory(null)
+                                      setEditingRuleText(prev => {
+                                        const newState = { ...prev }
+                                        delete newState[key]
+                                        return newState
+                                      })
+                                    }}
                                     className="border-primary/30"
                                   >
                                     Cancel
@@ -463,12 +731,14 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                     size="sm"
                                     variant="outline"
                                     className="mt-1 border-primary/30"
-                                    onClick={() =>
+                                    onClick={() => {
+                                      const key = `${category.id}-${subcategory.id}`
+                                      setEditingRuleText(prev => ({ ...prev, [key]: subcategory.userRule || '' }))
                                       setEditingSubcategory({
                                         categoryId: category.id,
                                         subcategoryId: subcategory.id,
                                       })
-                                    }
+                                    }}
                                   >
                                     Define Business Rule
                                   </Button>
@@ -478,12 +748,14 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
                                     size="sm"
                                     variant="ghost"
                                     className="mt-2 text-primary hover:text-primary/80"
-                                    onClick={() =>
+                                    onClick={() => {
+                                      const key = `${category.id}-${subcategory.id}`
+                                      setEditingRuleText(prev => ({ ...prev, [key]: subcategory.userRule || '' }))
                                       setEditingSubcategory({
                                         categoryId: category.id,
                                         subcategoryId: subcategory.id,
                                       })
-                                    }
+                                    }}
                                   >
                                     Edit Rule
                                   </Button>
@@ -554,8 +826,94 @@ export default function BusinessRulesEditor({ config, onChange, availableModules
               </Collapsible>
             </Card>
           )
-        })}
+        })
+        ) : (
+          <Card className="border-primary/20 bg-card/50">
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground mb-2">No business rules found</p>
+              <p className="text-sm text-muted-foreground">
+                Business rules will appear here after they are generated from your BRD or added manually.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Module Selector Dialog */}
+      <Dialog open={!!showModuleSelector} onOpenChange={() => {
+        setShowModuleSelector(null)
+        setSelectedModulesInDialog(new Set())
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Select Modules</DialogTitle>
+            <DialogDescription>
+              Choose modules to apply this business rule to
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[400px] overflow-y-auto p-1">
+            {availableModules.length > 0 ? (
+              availableModules.map(module => {
+                const isSelected = selectedModulesInDialog.has(module.id)
+                
+                return (
+                  <div
+                    key={module.id}
+                    className={`p-3 rounded-lg border transition-all flex items-center gap-3 ${
+                      isSelected
+                        ? 'border-primary/50 bg-primary/10'
+                        : 'border-primary/20 hover:border-primary/30'
+                    }`}
+                  >
+                    <Checkbox
+                      id={module.id}
+                      checked={isSelected}
+                      onCheckedChange={(checked) => {
+                        const newSelected = new Set(selectedModulesInDialog)
+                        if (checked) {
+                          newSelected.add(module.id)
+                        } else {
+                          newSelected.delete(module.id)
+                        }
+                        setSelectedModulesInDialog(newSelected)
+                      }}
+                      className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                    />
+                    <Label 
+                      htmlFor={module.id} 
+                      className="flex-1 cursor-pointer text-sm font-normal"
+                    >
+                      {module.moduleName}
+                    </Label>
+                  </div>
+                )
+              })
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No modules available. Please add modules first.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowModuleSelector(null)
+                setSelectedModulesInDialog(new Set())
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveSelectedModules}
+              disabled={selectedModulesInDialog.size === 0}
+              className="bg-primary hover:bg-primary/90"
+            >
+              Save Selected ({selectedModulesInDialog.size})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -337,22 +337,51 @@ export const projectInformationAPI = {
   },
 
   save: async (projectId: string, projectInfo: any) => {
-    // Transform camelCase to snake_case for database
-    const { data, error } = await supabase
+    // Check if project information already exists
+    const { data: existingData, error: checkError } = await supabase
       .from('project_information')
-      .upsert({
-        project_id: projectId,
-        vision: projectInfo.vision || null,
-        purpose: projectInfo.purpose || null,
-        objectives: projectInfo.objectives || null,
-        project_scope: projectInfo.projectScope || null,
-        functional_requirements: projectInfo.functionalRequirements || null,
-        non_functional_requirements: projectInfo.nonFunctionalRequirements || null,
-        integration_requirements: projectInfo.integrationRequirements || null,
-        reporting_requirements: projectInfo.reportingRequirements || null
-      })
-      .select()
+      .select('project_id')
+      .eq('project_id', projectId)
       .single()
+    
+    // Record exists if we have data and no error, or if error is not "not found" (PGRST116)
+    const recordExists = existingData !== null && (!checkError || checkError.code !== 'PGRST116')
+
+    // Transform camelCase to snake_case for database
+    const projectInfoData = {
+      project_id: projectId,
+      vision: projectInfo.vision || null,
+      purpose: projectInfo.purpose || null,
+      objectives: projectInfo.objectives || null,
+      project_scope: projectInfo.projectScope || null,
+      functional_requirements: projectInfo.functionalRequirements || null,
+      non_functional_requirements: projectInfo.nonFunctionalRequirements || null,
+      integration_requirements: projectInfo.integrationRequirements || null,
+      reporting_requirements: projectInfo.reportingRequirements || null
+    }
+
+    let data, error
+
+    if (recordExists) {
+      // Update existing record
+      const result = await supabase
+        .from('project_information')
+        .update(projectInfoData)
+        .eq('project_id', projectId)
+        .select()
+        .single()
+      data = result.data
+      error = result.error
+    } else {
+      // Insert new record
+      const result = await supabase
+        .from('project_information')
+        .insert(projectInfoData)
+        .select()
+        .single()
+      data = result.data
+      error = result.error
+    }
 
     if (error) throw error
     return { projectInformation: data }
@@ -372,29 +401,65 @@ export const userStoriesAPI = {
       .order('created_at', { ascending: false })
 
     if (error) throw error
-    return { userStories: data || [] }
+    
+    // Transform snake_case to camelCase for frontend
+    const transformedData = (data || []).map(story => ({
+      id: story.id,
+      title: story.title,
+      userRole: story.user_role,
+      description: story.description,
+      acceptanceCriteria: story.acceptance_criteria,
+      priority: story.priority,
+      status: story.status,
+      moduleId: story.module_id,
+      projectId: story.project_id,
+      createdAt: story.created_at,
+      updatedAt: story.updated_at
+    }))
+    
+    return { userStories: transformedData }
   },
 
   save: async (projectId: string, userStories: any[]) => {
-    // Delete existing
-    await supabase
-      .from('user_stories')
-      .delete()
-      .eq('project_id', projectId)
+    // Transform camelCase to snake_case for database
+    const transformedStories = userStories.map(story => ({
+      id: story.id,
+      project_id: projectId,
+      title: story.title,
+      user_role: story.userRole || story.user_role,
+      description: story.description,
+      acceptance_criteria: story.acceptanceCriteria || story.acceptance_criteria,
+      priority: story.priority,
+      status: story.status,
+      module_id: story.moduleId || story.module_id,
+      created_at: story.createdAt || story.created_at,
+      updated_at: story.updatedAt || story.updated_at
+    }))
 
-    // Insert new
+    // Use upsert to update existing records or insert new ones
     const { data, error } = await supabase
       .from('user_stories')
-      .insert(
-        userStories.map(story => ({
-          ...story,
-          project_id: projectId
-        }))
-      )
+      .upsert(transformedStories, { onConflict: 'id' })
       .select()
 
     if (error) throw error
-    return { userStories: data || [] }
+    
+    // Transform snake_case back to camelCase for frontend
+    const transformedData = (data || []).map(story => ({
+      id: story.id,
+      title: story.title,
+      userRole: story.user_role,
+      description: story.description,
+      acceptanceCriteria: story.acceptance_criteria,
+      priority: story.priority,
+      status: story.status,
+      moduleId: story.module_id,
+      projectId: story.project_id,
+      createdAt: story.created_at,
+      updatedAt: story.updated_at
+    }))
+    
+    return { userStories: transformedData }
   }
 }
 
@@ -415,18 +480,14 @@ export const modulesAPI = {
   },
 
   save: async (projectId: string, modules: any[]) => {
-    await supabase
-      .from('modules')
-      .delete()
-      .eq('project_id', projectId)
-
     const { data, error } = await supabase
       .from('modules')
-      .insert(
+      .upsert(
         modules.map(module => ({
           ...module,
           project_id: projectId
-        }))
+        })),
+        { onConflict: 'id' }
       )
       .select()
 
@@ -441,30 +502,155 @@ export const modulesAPI = {
 
 export const businessRulesAPI = {
   get: async (projectId: string) => {
-    const { data, error } = await supabase
-      .from('business_rules')
-      .select('*')
-      .eq('project_id', projectId)
-      .single()
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/business-rules`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      })
 
-    if (error && error.code !== 'PGRST116') throw error
-    return { businessRules: data?.config || null }
+      if (!response.ok) {
+        if (response.status === 404) {
+          return { businessRules: null }
+        }
+        throw new Error('Failed to fetch business rules')
+      }
+
+      const result = await response.json()
+      return { businessRules: result.businessRules }
+    } catch (error) {
+      console.error('Error fetching business rules:', error)
+      return { businessRules: null }
+    }
   },
 
-  save: async (projectId: string, businessRules: any) => {
-    const { data, error } = await supabase
-      .from('business_rules')
-      .upsert({
-        project_id: projectId,
-        config: businessRules,
-        apply_to_all_project: businessRules.applyToAllProjects || false,
-        specific_modules: businessRules.specificModules || []
-      })
-      .select()
-      .single()
+  save: async (projectId: string, businessRules: any, method: 'POST' | 'PUT' = 'POST') => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/business-rules`, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${session?.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ businessRules })
+    })
 
-    if (error) throw error
-    return { businessRules: data.config }
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to save business rules')
+    }
+
+    const result = await response.json()
+    return { businessRules: result.businessRules }
+  },
+
+  update: async (projectId: string, businessRules: any) => {
+    return businessRulesAPI.save(projectId, businessRules, 'PUT')
+  },
+
+  getByModule: async (projectId: string, moduleId: string) => {
+    try {
+      // First check for the dedicated business rules record
+      const { data: rulesFeature, error: rulesError } = await supabase
+        .from('features')
+        .select('business_rules')
+        .eq('project_id', projectId)
+        .eq('module_id', moduleId)
+        .eq('title', '_module_business_rules')
+        .single()
+
+      if (rulesFeature && rulesFeature.business_rules) {
+        try {
+          // Try to parse as JSON array
+          const parsed = JSON.parse(rulesFeature.business_rules)
+          if (Array.isArray(parsed)) {
+            return { businessRules: parsed }
+          }
+        } catch {
+          // If not JSON, treat as single rule
+          return { businessRules: [rulesFeature.business_rules] }
+        }
+      }
+
+      // Fallback: fetch all features for this module and extract business rules
+      const { data, error } = await supabase
+        .from('features')
+        .select('business_rules')
+        .eq('project_id', projectId)
+        .eq('module_id', moduleId)
+        .neq('title', '_module_business_rules') // Exclude the dedicated record
+
+      if (error && error.code !== 'PGRST116') throw error
+      
+      // Extract unique business rules from features
+      const rules = (data || [])
+        .map((f: any) => f.business_rules)
+        .filter((rule: string) => rule && rule.trim() !== '')
+        .filter((rule: string, index: number, self: string[]) => self.indexOf(rule) === index) // Remove duplicates
+      
+      return { businessRules: rules }
+    } catch (error) {
+      console.error('Error fetching business rules by module:', error)
+      return { businessRules: [] }
+    }
+  },
+
+  saveByModule: async (projectId: string, moduleId: string, rules: string[]) => {
+    // For now, we'll store the business rules as a JSON string in a single feature record
+    // This is a temporary solution - ideally business rules should have their own table
+    
+    try {
+      // First, try to find an existing "business rules" feature for this module
+      const { data: existingFeatures, error: fetchError } = await supabase
+        .from('features')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('module_id', moduleId)
+        .eq('title', '_module_business_rules')
+        .single()
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        throw fetchError
+      }
+
+      const businessRulesJson = JSON.stringify(rules)
+
+      if (existingFeatures) {
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from('features')
+          .update({
+            business_rules: businessRulesJson,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingFeatures.id)
+
+        if (updateError) throw updateError
+      } else {
+        // Create new record
+        const { error: insertError } = await supabase
+          .from('features')
+          .insert({
+            project_id: projectId,
+            module_id: moduleId,
+            title: '_module_business_rules',
+            description: 'Business rules for this module',
+            business_rules: businessRulesJson,
+            priority: 'High',
+            status: 'Not Started'
+          })
+
+        if (insertError) throw insertError
+      }
+
+      return { success: true, businessRules: rules }
+    } catch (error) {
+      console.error('Error saving business rules by module:', error)
+      throw error
+    }
   }
 }
 
@@ -516,16 +702,47 @@ export const actionsAPI = {
   },
 
   save: async (projectId: string, actions: any) => {
-    const { data, error } = await supabase
+    // Check if a record already exists for this project
+    const { data: existingData, error: checkError } = await supabase
       .from('actions_interactions')
-      .upsert({
-        project_id: projectId,
-        config: actions,
-        apply_to_all_project: actions.applyToAllProjects || false,
-        specific_modules: actions.specificModules || []
-      })
-      .select()
+      .select('id')
+      .eq('project_id', projectId)
       .single()
+
+    let data, error
+
+    if (existingData && !checkError) {
+      // Update existing record
+      const { data: updateData, error: updateError } = await supabase
+        .from('actions_interactions')
+        .update({
+          config: actions,
+          apply_to_all_project: actions.applyToAllProjects || false,
+          specific_modules: actions.specificModules || [],
+          updated_at: new Date().toISOString()
+        })
+        .eq('project_id', projectId)
+        .select()
+        .single()
+
+      data = updateData
+      error = updateError
+    } else {
+      // Insert new record
+      const { data: insertData, error: insertError } = await supabase
+        .from('actions_interactions')
+        .insert({
+          project_id: projectId,
+          config: actions,
+          apply_to_all_project: actions.applyToAllProjects || false,
+          specific_modules: actions.specificModules || []
+        })
+        .select()
+        .single()
+
+      data = insertData
+      error = insertError
+    }
 
     if (error) throw error
     return { actions: data.config }
@@ -634,7 +851,7 @@ export const promptsAPI = {
 // FEATURES API
 // ============================================
 
-const featuresAPI = {
+export const featuresAPI = {
   get: async (projectId: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -705,6 +922,40 @@ const featuresAPI = {
       console.error('Error saving features:', error)
       throw error
     }
+  },
+
+  addSingle: async (projectId: string, feature: any) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token')
+      }
+
+      console.log('➕ Adding single feature to:', `${API_BASE_URL}/api/projects/${projectId}/features/single`)
+      console.log('📝 Feature details:', feature)
+
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/features/single`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(feature)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to add feature' }))
+        console.error('❌ Feature add error:', response.status, errorData)
+        throw new Error(errorData.message || 'Failed to add feature')
+      }
+
+      const data = await response.json()
+      console.log('✅ Feature added successfully:', data)
+      return { feature: data.feature }
+    } catch (error) {
+      console.error('Error adding feature:', error)
+      throw error
+    }
   }
 }
 
@@ -713,7 +964,12 @@ const featuresAPI = {
 // ============================================
 
 export const vibePromptsAPI = {
-  generate: async (projectId: string, developmentType: DevelopmentType, previousOutputs: string[] = []) => {
+  generate: async (
+    projectId: string, 
+    developmentType: DevelopmentType | string, 
+    selectedModuleIds?: string[],
+    selectedFeatureIds?: string[]
+  ) => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw new Error('Not authenticated')
 
@@ -726,13 +982,98 @@ export const vibePromptsAPI = {
       body: JSON.stringify({
         projectId,
         developmentType,
-        previousOutputs
+        selectedModuleIds: selectedModuleIds || [],
+        selectedFeatureIds: selectedFeatureIds || []
       })
     })
 
     if (!response.ok) {
       const error = await response.json()
       throw new Error(error.message || 'Failed to generate Vibe prompt')
+    }
+
+    const result = await response.json()
+    return result
+  },
+
+  // RAG API methods
+  initializeRAG: async (projectId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/rag/initialize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ projectId })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to initialize RAG')
+    }
+
+    return await response.json()
+  },
+
+  queryRAG: async (projectId: string, question: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/rag/query`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ projectId, question })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to query RAG')
+    }
+
+    const result = await response.json()
+    return result.answer
+  },
+
+  checkRAGHealth: async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/rag/health`, {
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    })
+
+    if (!response.ok) return false
+    const result = await response.json()
+    return result.healthy
+  },
+
+  saveImplementation: async (promptId: string, implementationCode: string, developerNotes?: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const response = await fetch(`${API_BASE_URL}/api/prompts/${promptId}/implementation`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        implementationCode,
+        developerNotes
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to save implementation')
     }
 
     const result = await response.json()
@@ -847,8 +1188,17 @@ export const apiClient = {
   },
 
   put: async (url: string, data: any) => {
-    const projectId = url.split('/')[2]
-    return projectAPI.update(projectId, data)
+    const parts = url.split('/')
+    const projectId = parts[2]
+    const endpoint = parts[3]
+    
+    switch (endpoint) {
+      case 'business-rules':
+        // For PUT, we want to update existing business rules
+        return businessRulesAPI.update(projectId, data.businessRules)
+      default:
+        return projectAPI.update(projectId, data)
+    }
   },
 
   delete: async (url: string) => {

@@ -11,6 +11,99 @@ interface AppWithAuthProps {
 export const AppWithAuth: React.FC<AppWithAuthProps> = ({ children }) => {
   const { user, session, loading, signOut } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [hasRecoveryToken, setHasRecoveryToken] = useState(false);
+
+  // Check for recovery token in URL - but only when user is not logged in
+  useEffect(() => {
+    // If user is logged in, clear recovery token flag and hash, don't check
+    if (user && session) {
+      setHasRecoveryToken(false);
+      sessionStorage.removeItem('password_reset_flow');
+      // Clear any hash from URL
+      if (window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      return;
+    }
+
+    const checkForRecoveryToken = () => {
+      // First check sessionStorage flag (set by initial HTML script)
+      if (sessionStorage.getItem('password_reset_flow') === 'true') {
+        return true;
+      }
+      
+      const hash = window.location.hash;
+      const searchParams = new URLSearchParams(window.location.search);
+      
+      // Check hash for access_token and type=recovery
+      if (hash && hash.includes('access_token') && hash.includes('type=recovery')) {
+        sessionStorage.setItem('password_reset_flow', 'true');
+        return true;
+      }
+      
+      // Check hash params
+      if (hash) {
+        try {
+          const hashParams = new URLSearchParams(hash.substring(1));
+          if (hashParams.get('type') === 'recovery' && hashParams.get('access_token')) {
+            sessionStorage.setItem('password_reset_flow', 'true');
+            return true;
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+      
+      // Check search params
+      if (searchParams.get('type') === 'recovery' && searchParams.get('access_token')) {
+        sessionStorage.setItem('password_reset_flow', 'true');
+        return true;
+      }
+      
+      return false;
+    };
+
+    // Check immediately
+    if (checkForRecoveryToken()) {
+      setHasRecoveryToken(true);
+      return;
+    }
+
+    // Check after delay (Supabase redirects might set hash after page load)
+    const timeoutId = setTimeout(() => {
+      if (checkForRecoveryToken()) {
+        setHasRecoveryToken(true);
+      }
+    }, 100);
+
+    // Poll for hash changes (but stop if user logs in)
+    const intervalId = setInterval(() => {
+      if (user && session) {
+        clearInterval(intervalId);
+        return;
+      }
+      if (checkForRecoveryToken()) {
+        setHasRecoveryToken(true);
+      }
+    }, 200);
+
+    // Listen for hash changes
+    const handleHashChange = () => {
+      if (!user || !session) {
+        if (checkForRecoveryToken()) {
+          setHasRecoveryToken(true);
+        }
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+
+    return () => {
+      clearTimeout(timeoutId);
+      clearInterval(intervalId);
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, [user, session]);
 
   if (loading) {
     return (
@@ -23,6 +116,8 @@ export const AppWithAuth: React.FC<AppWithAuthProps> = ({ children }) => {
     );
   }
 
+  // Show AuthPage only if user is not logged in
+  // Recovery token check is handled inside the useEffect above
   if (!user || !session) {
     return <AuthPage />;
   }

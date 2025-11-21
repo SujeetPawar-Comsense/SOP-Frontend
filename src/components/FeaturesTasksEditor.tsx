@@ -52,6 +52,7 @@ export interface FeatureTask {
   status: 'Not Started' | 'In Progress' | 'Completed'
   estimatedHours?: number
   assignee?: string
+  businessRules?: string
 }
 
 export const createDefaultFeatureTask = (): FeatureTask => ({

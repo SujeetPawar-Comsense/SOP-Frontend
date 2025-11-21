@@ -56,46 +56,9 @@ export default function UserStoriesAndFeatures({
 
   // Monitor when features change
   useEffect(() => {
-    console.log('🔄 Features updated in UserStoriesAndFeatures component')
-    console.log('📊 Total features:', features?.length || 0)
-    if (features && features.length > 0) {
-      console.log('📝 Sample feature:', features[0])
-      console.log('🔗 All feature-story mappings:', features.map(f => ({
-        featureId: f.id,
-        featureTitle: f.title,
-        userStoryId: f.userStoryId,
-        userStoryIdType: typeof f.userStoryId
-      })))
-    }
-    
-    if (userStories && userStories.length > 0) {
-      console.log('📚 User story IDs:', userStories.map(s => ({
-        storyId: s.id,
-        storyIdType: typeof s.id,
-        storyTitle: s.title
-      })))
-    }
+    // Features and user stories updated
   }, [features, userStories])
 
-  // Debug logging
-  console.log('UserStoriesAndFeatures - Total features received:', features?.length || 0)
-  console.log('UserStoriesAndFeatures - Features:', features)
-  console.log('UserStoriesAndFeatures - User stories:', userStories?.length || 0)
-  console.log('UserStoriesAndFeatures - User story IDs:', userStories?.map(s => s.id))
-  console.log('UserStoriesAndFeatures - Features with userStoryId:', features?.map(f => ({ 
-    id: f.id, 
-    userStoryId: f.userStoryId, 
-    title: f.title 
-  })))
-  
-  // Check for ID type mismatches
-  if (features?.length > 0 && userStories?.length > 0) {
-    const sampleFeature = features[0];
-    const sampleStory = userStories[0];
-    console.log('ID Type Check:');
-    console.log('  Sample Story ID:', sampleStory.id, 'Type:', typeof sampleStory.id);
-    console.log('  Sample Feature userStoryId:', sampleFeature.userStoryId, 'Type:', typeof sampleFeature.userStoryId);
-  }
 
   const toggleUserStory = (userStoryId: string) => {
     const newExpanded = new Set(expandedUserStories)
@@ -133,11 +96,15 @@ export default function UserStoriesAndFeatures({
   }
 
   const getUserStoryStats = (userStoryId: string) => {
-    const storyFeatures = features.filter(f => 
-      f.userStoryId === userStoryId || 
-      (f as any).user_story_id === userStoryId || // Check snake_case version too
-      String(f.userStoryId) === String(userStoryId) // Ensure string comparison
-    )
+    const storyFeatures = features.filter(f => {
+      // Normalize the feature's userStoryId
+      const featureUserStoryId = f.userStoryId || (f as any).user_story_id
+      // Compare both as strings to handle type mismatches
+      return featureUserStoryId && (
+        String(featureUserStoryId) === String(userStoryId) ||
+        featureUserStoryId === userStoryId
+      )
+    })
     const completedFeatures = storyFeatures.filter(f => f.status === 'Completed').length
     
     return {
@@ -195,20 +162,17 @@ export default function UserStoriesAndFeatures({
                 {/* User stories for this module */}
                 {moduleStories.map((userStory) => {
                   const isStoryExpanded = expandedUserStories.has(userStory.id)
+                  // Normalize feature filtering to handle both camelCase and snake_case
                   const storyFeatures = features.filter(f => {
-                    const match = f.userStoryId === userStory.id || 
-                                  (f as any).user_story_id === userStory.id || // Check snake_case version too
-                                  String(f.userStoryId) === String(userStory.id) // Ensure string comparison
-                    if (match) {
-                      console.log(`✅ Feature ${f.id} matches story ${userStory.id}`)
-                    }
+                    // Get the userStoryId from feature (handle both formats)
+                    const featureUserStoryId = f.userStoryId || (f as any).user_story_id
+                    // Compare both as strings to handle UUID/string type mismatches
+                    const match = featureUserStoryId && (
+                      String(featureUserStoryId) === String(userStory.id) ||
+                      featureUserStoryId === userStory.id
+                    )
                     return match
                   })
-                  console.log(`Features for story ${userStory.id}:`, storyFeatures.length, storyFeatures)
-                  if (storyFeatures.length === 0 && features.length > 0) {
-                    console.log(`⚠️ No features found for story ${userStory.id}, but ${features.length} total features exist`)
-                    console.log('Sample feature:', features[0])
-                  }
                   const storyStats = getUserStoryStats(userStory.id)
                   const isStorySelected = selectedUserStory === userStory.id
 
@@ -339,11 +303,12 @@ export default function UserStoriesAndFeatures({
                               features={storyFeatures}
                               projectId={projectId}
                               onFeatureAdd={(newFeature) => {
-                                // Create a complete feature object
+                                // Create a complete feature object with moduleId from the user story
                                 const feature: FeatureTask = {
                                   id: crypto.randomUUID(),
                                   ...newFeature as FeatureTask,
-                                  userStoryId: userStory.id
+                                  userStoryId: userStory.id,
+                                  moduleId: userStory.moduleId // Include moduleId from parent user story
                                 }
                                 onFeatureEdit?.(feature)
                               }}
@@ -351,7 +316,6 @@ export default function UserStoriesAndFeatures({
                               onFeatureDelete={onFeatureDelete}
                               onAIMagic={() => {
                                 // Handle AI Magic for features
-                                console.log('AI Magic for features of story:', userStory.id)
                               }}
                               readOnly={readOnly}
                             />

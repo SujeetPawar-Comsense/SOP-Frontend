@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
@@ -9,6 +9,7 @@ import { Upload, FileText, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../utils/supabaseClient'
 import BRDParseResultsView from './BRDParseResultsView'
+import * as mammoth from 'mammoth'
 
 interface BRDUploadModalProps {
   open: boolean
@@ -29,17 +30,56 @@ export default function BRDUploadModal({ open, onClose, onSuccess }: BRDUploadMo
 
     setUploadedFile(file)
 
-    // Read file content
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const content = event.target?.result as string
+    // Check file type and process accordingly
+    const fileExtension = file.name.split('.').pop()?.toLowerCase()
+    
+    try {
+      let content = ''
+      
+      if (fileExtension === 'docx' || fileExtension === 'doc') {
+        // Handle Word documents with mammoth
+        const arrayBuffer = await file.arrayBuffer()
+        
+        try {
+          const result = await mammoth.extractRawText({ arrayBuffer })
+          content = result.value
+          
+          // Check if we got any meaningful text
+          if (!content || content.trim().length === 0) {
+            toast.error('Could not extract text from the Word document. Please ensure the file contains text.')
+            return
+          }
+          
+          // Log any warnings from mammoth
+          if (result.messages && result.messages.length > 0) {
+            console.warn('Mammoth warnings:', result.messages)
+          }
+        } catch (mammothError) {
+          console.error('Mammoth extraction error:', mammothError)
+          toast.error('Failed to parse Word document. Please try saving as .txt or .md file.')
+          return
+        }
+      } else if (fileExtension === 'txt' || fileExtension === 'md') {
+        // Handle text and markdown files
+        content = await file.text()
+      } else {
+        toast.error('Unsupported file format. Please use .txt, .md, .doc, or .docx files.')
+        return
+      }
+      
+      // Validate content
+      if (!content || content.trim().length === 0) {
+        toast.error('The file appears to be empty. Please select a file with content.')
+        return
+      }
+      
       setBrdContent(content)
-      toast.success(`File "${file.name}" loaded successfully`)
+      toast.success(`File "${file.name}" loaded successfully (${content.length.toLocaleString()} characters)`)
+      
+    } catch (error) {
+      console.error('File reading error:', error)
+      toast.error('Failed to read file. Please ensure the file is not corrupted.')
     }
-    reader.onerror = () => {
-      toast.error('Failed to read file')
-    }
-    reader.readAsText(file)
   }
 
   const handleParseBRD = async () => {
@@ -200,7 +240,7 @@ Vision: Become the leading platform for small businesses...
                     <Input
                       id="file-upload"
                       type="file"
-                      accept=".txt,.md,.doc,.docx"
+                      accept=".txt,.md,.doc,.docx,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       onChange={handleFileUpload}
                       className="bg-input-background border-primary/30"
                     />
@@ -218,12 +258,15 @@ Vision: Become the leading platform for small businesses...
                 {brdContent && (
                   <div>
                     <Label>Preview (first 500 characters)</Label>
-                    <div className="mt-2 p-4 bg-black/40 border border-primary/20 rounded-lg">
+                    <div className="mt-2 p-4 bg-black/40 border border-primary/20 rounded-lg max-h-48 overflow-y-auto">
                       <p className="text-sm font-mono whitespace-pre-wrap">
                         {brdContent.substring(0, 500)}
                         {brdContent.length > 500 && '...'}
                       </p>
                     </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {brdContent.length.toLocaleString()} characters loaded
+                    </p>
                   </div>
                 )}
               </TabsContent>

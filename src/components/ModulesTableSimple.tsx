@@ -1,13 +1,17 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { toast } from 'sonner@2.0.3'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { Trash2, Plus, Edit2, Check, X } from 'lucide-react'
+import { Trash2, Plus, Edit2, Check, X, Shield, Wand2, CheckCircle2, RotateCcw, Save, Loader2 } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Badge } from './ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { Label } from './ui/label'
 import { ModuleFeature } from './ExcelUtils'
 import AIGeneralEnhancement from './AIGeneralEnhancement'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { businessRulesAPI } from '../utils/api'
 
 // Keep old exports for compatibility
 export interface ModuleFeatures {
@@ -18,19 +22,45 @@ export interface ModuleBusinessRules {
   [moduleId: string]: string[]
 }
 
+interface FeatureTask {
+  id: string
+  title: string
+  description?: string
+  moduleId?: string
+  userStoryId?: string
+  priority?: string
+  status?: string
+  estimatedHours?: number
+  businessRules?: string
+  business_rules?: string // Support both camelCase and snake_case
+  [key: string]: any
+}
+
 interface ModulesTableProps {
   modules: ModuleFeature[]
   projectId?: string
+  features?: FeatureTask[]
   onChange: (modules: ModuleFeature[]) => void
 }
 
 export default function ModulesTable({ 
   modules,
   projectId,
+  features = [],
   onChange
 }: ModulesTableProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<ModuleFeature | null>(null)
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null)
+  const [selectedBusinessRules, setSelectedBusinessRules] = useState<ModuleBusinessRules>({})
+  const [customBusinessRule, setCustomBusinessRule] = useState('')
+  const [editingRuleIndex, setEditingRuleIndex] = useState<number | null>(null)
+  const [editingRuleText, setEditingRuleText] = useState('')
+  const [showAIMagicDialog, setShowAIMagicDialog] = useState(false)
+  const [aiMagicStage, setAIMagicStage] = useState(0)
+  const [loadingBusinessRules, setLoadingBusinessRules] = useState(false)
+  const [moduleBusinessRules, setModuleBusinessRules] = useState<Record<string, string[]>>({})
+  const businessRulesCardRef = useRef<HTMLDivElement>(null)
 
   const handleAddModule = () => {
     const newModule: ModuleFeature = {
@@ -49,22 +79,87 @@ export default function ModulesTable({
 
   const handleEdit = (module: ModuleFeature) => {
     setEditingId(module.id)
-    // Convert array dependencies to comma-separated string for editing
-    setEditForm({ 
+    // Convert dependencies to comma-separated string for editing
+    // Normalize field names - handle both camelCase and snake_case from backend
+    const normalizeDependencies = (deps: any): string => {
+      if (!deps) return ''
+      
+      // If it's already a string
+      if (typeof deps === 'string') {
+        // Check if it's a JSON string
+        if (deps.trim().startsWith('[') || deps.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(deps)
+            if (Array.isArray(parsed)) {
+              return parsed.join(', ')
+            }
+            return String(parsed)
+          } catch {
+            // Not valid JSON, return as is (might be comma-separated already)
+            return deps
+          }
+        }
+        // Already a comma-separated string
+        return deps
+      }
+      
+      // If it's an array, join with commas
+      if (Array.isArray(deps)) {
+        return deps.join(', ')
+      }
+      
+      // Fallback: convert to string
+      return String(deps)
+    }
+    
+    const normalizedModule = {
       ...module,
-      dependencies: Array.isArray(module.dependencies) 
-        ? module.dependencies.join(', ') 
-        : module.dependencies 
-    })
+      moduleName: (module as any).module_name || module.moduleName || '',
+      description: module.description || '',
+      businessImpact: (module as any).business_impact || module.businessImpact || '',
+      dependencies: normalizeDependencies(module.dependencies)
+    }
+    setEditForm(normalizedModule)
   }
 
   const handleSave = () => {
     if (editForm && editingId) {
-      if (!editForm.moduleName || !editForm.description) {
+      // Extract values from editForm - check both camelCase and snake_case
+      const moduleName = editForm.moduleName || (editForm as any).module_name || ''
+      const description = editForm.description || ''
+      const businessImpact = editForm.businessImpact || (editForm as any).business_impact || ''
+      
+      console.log('Saving module:', { moduleName, description, businessImpact, editForm })
+      
+      if (!moduleName || !description) {
         toast.error('Module name and description are required')
         return
       }
-      onChange(modules.map(m => m.id === editingId ? editForm : m))
+      
+      // Find the original module to preserve all its properties
+      const originalModule = modules.find(m => m.id === editingId)
+      
+      // Normalize the module data before saving - preserve all original properties
+      const normalizedModule: ModuleFeature = {
+        ...originalModule, // Preserve original module properties
+        id: editingId, // Ensure ID is preserved
+        moduleName: moduleName, // Ensure camelCase name (explicitly set)
+        description: description,
+        businessImpact: businessImpact, // Ensure camelCase business impact (explicitly set)
+        dependencies: editForm.dependencies || originalModule?.dependencies || '',
+        priority: editForm.priority || originalModule?.priority || 'Medium',
+        status: editForm.status || originalModule?.status || 'Not Started'
+      }
+      
+      // Also set snake_case versions for backend compatibility
+      ;(normalizedModule as any).module_name = moduleName
+      ;(normalizedModule as any).business_impact = businessImpact
+      
+      console.log('Normalized module before save:', normalizedModule)
+      
+      // Update local state and trigger save via onChange
+      const updatedModules = modules.map(m => m.id === editingId ? normalizedModule : m)
+      onChange(updatedModules)
       setEditingId(null)
       setEditForm(null)
       toast.success('Module saved successfully')
@@ -82,8 +177,268 @@ export default function ModulesTable({
 
   const handleDelete = (id: string) => {
     onChange(modules.filter(m => m.id !== id))
+    // Also clear selected module if it's being deleted
+    if (selectedModuleId === id) {
+      setSelectedModuleId(null)
+    }
     toast.success('Module deleted successfully')
   }
+
+  const handleModuleClick = async (moduleId: string) => {
+    if (editingId) return // Don't allow selection while editing
+    
+    // If clicking the same module, deselect it
+    if (selectedModuleId === moduleId) {
+      setSelectedModuleId(null)
+      return
+    }
+    
+    // Select the new module
+    setSelectedModuleId(moduleId)
+    
+    // Fetch business rules for this module from API
+    if (projectId && moduleId) {
+      setLoadingBusinessRules(true)
+      try {
+        const response = await businessRulesAPI.getByModule(projectId, moduleId)
+        const fetchedRules = response.businessRules || []
+        
+        // Update both selectedBusinessRules and moduleBusinessRules
+        setSelectedBusinessRules({
+          ...selectedBusinessRules,
+          [moduleId]: fetchedRules
+        })
+        setModuleBusinessRules({
+          ...moduleBusinessRules,
+          [moduleId]: fetchedRules
+        })
+      } catch (error: any) {
+        console.error('Error fetching business rules:', error)
+        toast.error('Failed to load business rules for this module')
+        
+        // Initialize with empty array on error
+        setSelectedBusinessRules({
+          ...selectedBusinessRules,
+          [moduleId]: []
+        })
+        setModuleBusinessRules({
+          ...moduleBusinessRules,
+          [moduleId]: []
+        })
+      } finally {
+        setLoadingBusinessRules(false)
+      }
+    } else {
+      // Initialize with empty array if no projectId
+      if (!selectedBusinessRules[moduleId]) {
+        setSelectedBusinessRules({
+          ...selectedBusinessRules,
+          [moduleId]: []
+        })
+      }
+    }
+  }
+
+  // Scroll to business rules card when a module is selected
+  useEffect(() => {
+    if (selectedModuleId && businessRulesCardRef.current) {
+      setTimeout(() => {
+        businessRulesCardRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+          inline: 'nearest'
+        })
+      }, 150)
+    }
+  }, [selectedModuleId])
+
+  // AI Magic stage progression
+  useEffect(() => {
+    if (!showAIMagicDialog) return
+
+    const stages = [
+      { duration: 1500, nextStage: 1 },
+      { duration: 2000, nextStage: 2 },
+      { duration: 1500, nextStage: 3 },
+    ]
+
+    if (aiMagicStage < stages.length) {
+      const timer = setTimeout(() => {
+        setAIMagicStage(aiMagicStage + 1)
+      }, stages[aiMagicStage].duration)
+
+      return () => clearTimeout(timer)
+    } else if (aiMagicStage === 3) {
+      setTimeout(() => {
+        setShowAIMagicDialog(false)
+        setAIMagicStage(0)
+        toast.success('AI suggestions applied successfully!')
+      }, 500)
+    }
+  }, [showAIMagicDialog, aiMagicStage])
+
+  const handleAIMagic = () => {
+    setShowAIMagicDialog(true)
+    setAIMagicStage(0)
+  }
+
+
+
+  // Add a custom business rule to the selected module
+  const handleAddCustomRule = async () => {
+    if (!selectedModuleId || !customBusinessRule.trim() || !projectId) return
+    
+    const currentRules = selectedBusinessRules[selectedModuleId] || []
+    if (currentRules.includes(customBusinessRule.trim())) {
+      toast.error('This business rule already exists')
+      return // Don't add duplicates
+    }
+    
+    const newRules = [...currentRules, customBusinessRule.trim()]
+    
+    // Update local state immediately for better UX
+    setSelectedBusinessRules({
+      ...selectedBusinessRules,
+      [selectedModuleId]: newRules
+    })
+    setCustomBusinessRule('')
+    
+    // Save to backend
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, newRules)
+      toast.success('Business rule added successfully')
+    } catch (error) {
+      // Revert on error
+      setSelectedBusinessRules({
+        ...selectedBusinessRules,
+        [selectedModuleId]: currentRules
+      })
+      toast.error('Failed to add business rule')
+      console.error('Error adding business rule:', error)
+    }
+  }
+
+  // Delete a business rule from the selected module
+  const handleDeleteRule = async (ruleIndex: number) => {
+    if (!selectedModuleId || !projectId) return
+    
+    const currentRules = selectedBusinessRules[selectedModuleId] || []
+    const newRules = currentRules.filter((_, idx) => idx !== ruleIndex)
+    
+    // Update local state immediately for better UX
+    setSelectedBusinessRules({
+      ...selectedBusinessRules,
+      [selectedModuleId]: newRules
+    })
+    
+    // Save to backend
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, newRules)
+      toast.success('Business rule removed successfully')
+    } catch (error) {
+      // Revert on error
+      setSelectedBusinessRules({
+        ...selectedBusinessRules,
+        [selectedModuleId]: currentRules
+      })
+      toast.error('Failed to remove business rule')
+      console.error('Error removing business rule:', error)
+    }
+  }
+
+  // Start editing a business rule
+  const handleStartEditRule = (ruleIndex: number, ruleText: string) => {
+    setEditingRuleIndex(ruleIndex)
+    setEditingRuleText(ruleText)
+  }
+
+  // Save edited business rule
+  const handleSaveEditedRule = async () => {
+    if (!selectedModuleId || editingRuleIndex === null || !projectId) return
+    
+    const currentRules = selectedBusinessRules[selectedModuleId] || []
+    const newRules = currentRules.map((r, idx) => 
+      idx === editingRuleIndex ? editingRuleText.trim() : r
+    )
+    
+    // Update local state immediately for better UX
+    setSelectedBusinessRules({
+      ...selectedBusinessRules,
+      [selectedModuleId]: newRules
+    })
+    setEditingRuleIndex(null)
+    setEditingRuleText('')
+    
+    // Save to backend
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, newRules)
+      toast.success('Business rule updated successfully')
+    } catch (error) {
+      // Revert on error
+      setSelectedBusinessRules({
+        ...selectedBusinessRules,
+        [selectedModuleId]: currentRules
+      })
+      setEditingRuleIndex(editingRuleIndex)
+      setEditingRuleText(editingRuleText)
+      toast.error('Failed to update business rule')
+      console.error('Error updating business rule:', error)
+    }
+  }
+
+  // Cancel editing business rule
+  const handleCancelEditRule = () => {
+    setEditingRuleIndex(null)
+    setEditingRuleText('')
+  }
+
+  // Save business rules
+  const handleSaveBusinessRules = async () => {
+    if (!selectedModuleId || !projectId) return
+    
+    const selectedModule = modules.find(m => m.id === selectedModuleId)
+    const moduleName = (selectedModule as any)?.module_name || selectedModule?.moduleName || 'Module'
+    const rules = selectedBusinessRules[selectedModuleId] || []
+    const ruleCount = rules.length
+    
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, rules)
+      toast.success(`Business rules saved for "${moduleName}" with ${ruleCount} rule${ruleCount !== 1 ? 's' : ''}`)
+    } catch (error) {
+      toast.error('Failed to save business rules')
+      console.error('Error saving business rules:', error)
+    }
+  }
+
+  // Reset all business rules for the current module
+  const handleResetBusinessRules = async () => {
+    if (!selectedModuleId || !projectId) return
+    
+    const selectedModule = modules.find(m => m.id === selectedModuleId)
+    const moduleName = (selectedModule as any)?.module_name || selectedModule?.moduleName || 'Module'
+    const currentRules = selectedBusinessRules[selectedModuleId] || []
+    
+    // Update local state immediately for better UX
+    setSelectedBusinessRules({
+      ...selectedBusinessRules,
+      [selectedModuleId]: []
+    })
+    
+    // Save to backend
+    try {
+      await businessRulesAPI.saveByModule(projectId, selectedModuleId, [])
+      toast.success(`All business rules cleared for "${moduleName}"`)
+    } catch (error) {
+      // Revert on error
+      setSelectedBusinessRules({
+        ...selectedBusinessRules,
+        [selectedModuleId]: currentRules
+      })
+      toast.error('Failed to clear business rules')
+      console.error('Error clearing business rules:', error)
+    }
+  }
+
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -171,17 +526,22 @@ export default function ModulesTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {modules.map((module) => (
+              {modules.map((module) => {
+                const isSelected = selectedModuleId === module.id
+                return (
                 <TableRow 
                   key={module.id} 
-                  className="border-primary/20 hover:bg-primary/5"
+                  className={`border-primary/20 hover:bg-primary/5 cursor-pointer transition-colors ${
+                    isSelected ? 'bg-primary/10' : ''
+                  }`}
+                  onClick={() => handleModuleClick(module.id)}
                 >
                   {editingId === module.id && editForm ? (
                     <>
                       <TableCell>
                         <Input
-                          value={editForm.module_name}
-                          onChange={(e) => setEditForm({ ...editForm, module_name: e.target.value })}
+                          value={editForm.moduleName || (editForm as any).module_name || ''}
+                          onChange={(e) => setEditForm({ ...editForm, moduleName: e.target.value })}
                           placeholder="Module name..."
                           className="bg-input-background border-primary/30"
                           autoFocus
@@ -189,7 +549,7 @@ export default function ModulesTable({
                       </TableCell>
                       <TableCell>
                         <Input
-                          value={editForm.descripdescriptiontion}
+                          value={editForm.description || ''}
                           onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                           placeholder="Description..."
                           className="bg-input-background border-primary/30"
@@ -212,7 +572,7 @@ export default function ModulesTable({
                       </TableCell>
                       <TableCell>
                         <Input
-                          value={editForm.businessImpact}
+                          value={editForm.businessImpact || (editForm as any).business_impact || ''}
                           onChange={(e) => setEditForm({ ...editForm, businessImpact: e.target.value })}
                           placeholder="Business impact..."
                           className="bg-input-background border-primary/30"
@@ -264,25 +624,57 @@ export default function ModulesTable({
                     </>
                   ) : (
                     <>
-                      <TableCell className="font-medium">{module.module_name}</TableCell>
+                      <TableCell className="font-medium">{(module as any).module_name || module.moduleName}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{module.description}</TableCell>
                       <TableCell>
                         <Badge className={getPriorityColor(module.priority)}>
                           {module.priority}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{module.business_impact || '-'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{(module as any).business_impact || module.businessImpact || '-'}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {Array.isArray(module.dependencies) 
-                          ? module.dependencies.join(', ') 
-                          : (module.dependencies || '-')}
+                        {(() => {
+                          // Helper function to format dependencies
+                          const formatDependencies = (deps: any): string => {
+                            if (!deps) return '-'
+                            
+                            // If it's already a string (comma-separated), return as is
+                            if (typeof deps === 'string') {
+                              // Check if it's a JSON string
+                              if (deps.trim().startsWith('[') || deps.trim().startsWith('{')) {
+                                try {
+                                  const parsed = JSON.parse(deps)
+                                  if (Array.isArray(parsed)) {
+                                    return parsed.join(', ')
+                                  }
+                                  return String(parsed)
+                                } catch {
+                                  // Not valid JSON, return as is (might be comma-separated already)
+                                  return deps
+                                }
+                              }
+                              // Already a comma-separated string
+                              return deps
+                            }
+                            
+                            // If it's an array, join with commas
+                            if (Array.isArray(deps)) {
+                              return deps.join(', ')
+                            }
+                            
+                            // Fallback: convert to string
+                            return String(deps)
+                          }
+                          
+                          return formatDependencies(module.dependencies)
+                        })()}
                       </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(module.status)}>
                           {module.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"
@@ -307,7 +699,8 @@ export default function ModulesTable({
                     </>
                   )}
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
         </div>
@@ -319,6 +712,247 @@ export default function ModulesTable({
           User Stories and Features/Tasks will be linked to these modules
         </div>
       )}
+
+      {/* Business Rules Management Panel */}
+      {selectedModuleId && (() => {
+        const selectedModule = modules.find(m => m.id === selectedModuleId)
+        if (!selectedModule) return null
+        
+        const moduleName = (selectedModule as any)?.module_name || selectedModule?.moduleName || 'Module'
+        
+        // Get business rules from API (fetched when module was clicked)
+        const extractedRules = moduleBusinessRules[selectedModuleId] || []
+        
+        const moduleSelectedRules = selectedBusinessRules[selectedModuleId] || []
+        
+        return (
+          <div ref={businessRulesCardRef}>
+            <Card className="border-primary/20 bg-card/80 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="bg-gradient-to-r from-primary to-cyan-400 bg-clip-text text-transparent flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-primary" />
+                      {moduleName} - Business Rules
+                    </CardTitle>
+                    <CardDescription>
+                      Define business rules and constraints for this module
+                    </CardDescription>
+                  </div>
+                  {/* <Button
+                    onClick={handleAIMagic}
+                    size="sm"
+                    className="gap-2 bg-gradient-to-r from-primary to-cyan-400 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    AI Magic
+                  </Button> */}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Loading State */}
+                {loadingBusinessRules && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-primary animate-spin mr-2" />
+                    <span className="text-sm text-muted-foreground">Loading business rules...</span>
+                  </div>
+                )}
+
+                {/* Business Rules from API Section */}
+                {/* {!loadingBusinessRules && extractedRules.length > 0 && (
+                  <div className="space-y-3">
+                    <Label className="text-sm text-primary flex items-center gap-2">
+                      <Shield className="w-4 h-4" />
+                      Business Rules ({extractedRules.length})
+                    </Label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {extractedRules.map((rule, idx) => (
+                        <div
+                          key={`extracted-${idx}`}
+                          className="flex items-start gap-2 p-3 rounded-md bg-cyan-500/10 border border-cyan-500/30"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
+                          <span className="text-xs text-foreground flex-1">{rule}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )} */}
+
+                {/* No Rules Message */}
+                {!loadingBusinessRules && extractedRules.length === 0 && moduleSelectedRules.length === 0 && (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    No business rules found for this module. Add custom rules below.
+                  </div>
+                )}
+
+                {/* Manually Added Business Rules Section */}
+                {moduleSelectedRules.length > 0 && (
+                  <div className="space-y-3">
+                    <Label className="text-sm text-primary flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Business Rules ({moduleSelectedRules.length})
+                    </Label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {moduleSelectedRules.map((rule, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between gap-2 p-3 rounded-md bg-primary/10 border border-primary/30 hover:bg-primary/15 transition-colors group"
+                        >
+                          {editingRuleIndex === idx ? (
+                            <>
+                              <Input
+                                value={editingRuleText}
+                                onChange={(e) => setEditingRuleText(e.target.value)}
+                                className="bg-input-background border-primary/30 text-xs flex-1"
+                                autoFocus
+                              />
+                              <div className="flex gap-1">
+                                <Button
+                                  onClick={handleSaveEditedRule}
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 hover:bg-green-500/10 hover:text-green-400"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  onClick={handleCancelEditRule}
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-xs text-foreground flex-1">{rule}</span>
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  onClick={() => handleStartEditRule(idx, rule)}
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 hover:bg-primary/10 hover:text-primary"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  onClick={() => handleDeleteRule(idx)}
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add Custom Business Rule */}
+                <div className="space-y-2">
+                  <Label className="text-sm">Add Custom Business Rule</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={customBusinessRule}
+                      onChange={(e) => setCustomBusinessRule(e.target.value)}
+                      placeholder="Enter custom business rule..."
+                      className="bg-input-background border-primary/30"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleAddCustomRule()
+                        }
+                      }}
+                    />
+                    <Button
+                      onClick={handleAddCustomRule}
+                      disabled={!customBusinessRule.trim()}
+                      className="gap-2 bg-primary hover:bg-primary/90"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Save and Reset Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-primary/20">
+                  <Button
+                    onClick={handleResetBusinessRules}
+                    variant="outline"
+                    className="gap-2 border-destructive/30 text-destructive hover:bg-destructive/10"
+                    disabled={moduleSelectedRules.length === 0}
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Reset Rules
+                  </Button>
+                  <Button
+                    onClick={handleSaveBusinessRules}
+                    className="gap-2 bg-primary hover:bg-primary/90"
+                  >
+                    <Save className="w-4 h-4" />
+                    Save Rules
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )
+      })()}
+
+      {/* AI Magic Dialog */}
+      <Dialog open={showAIMagicDialog} onOpenChange={setShowAIMagicDialog}>
+        <DialogContent className="sm:max-w-md border-primary/20 bg-background/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-primary">
+              <Wand2 className="w-5 h-5" />
+              AI Magic
+            </DialogTitle>
+            <DialogDescription>
+              {aiMagicStage === 0 && "Connecting to Agent..."}
+              {aiMagicStage === 1 && "Generating content with AI..."}
+              {aiMagicStage === 2 && "Fetching details..."}
+              {aiMagicStage === 3 && "Complete!"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center py-8">
+            <div className="relative">
+              <Loader2 className="w-16 h-16 text-primary animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-12 h-12 bg-primary/20 rounded-full animate-pulse" />
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {[0, 1, 2].map((stage) => (
+              <div key={stage} className="flex items-center gap-2">
+                <div
+                  className={`w-4 h-4 rounded-full flex items-center justify-center transition-all ${
+                    aiMagicStage > stage
+                      ? 'bg-primary'
+                      : aiMagicStage === stage
+                      ? 'bg-primary/50 animate-pulse'
+                      : 'bg-muted'
+                  }`}
+                >
+                  {aiMagicStage > stage && <Check className="w-3 h-3 text-background" />}
+                </div>
+                <span className={`text-sm ${aiMagicStage >= stage ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  {stage === 0 && "Connecting to Agent"}
+                  {stage === 1 && "Creating magic with AI"}
+                  {stage === 2 && "Almost there… retrieving details…"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -26,15 +26,20 @@ import {
   Database,
   Network,
   Lock,
-  Gauge
+  Gauge,
+  Layout,
+  CheckCircle,
+  Save
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { apiClient } from '../utils/api';
 
 interface ProjectDocumentCreatorProps {
   onBack: () => void;
   projectName?: string;
   userRole?: 'project_owner' | 'vibe_engineer';
   onGenerateComplete?: (projectId: string) => void;
+  projectId?: string;
 }
 
 interface DocumentSection {
@@ -50,9 +55,12 @@ interface DocumentData {
   text: string;
 }
 
-export default function ProjectDocumentCreator({ onBack, projectName, userRole = 'project_owner', onGenerateComplete }: ProjectDocumentCreatorProps) {
+export default function ProjectDocumentCreator({ onBack, projectName, userRole = 'project_owner', onGenerateComplete, projectId }: ProjectDocumentCreatorProps) {
   const [documentData, setDocumentData] = useState<Record<string, DocumentData>>({});
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [sectionsData, setSectionsData] = useState<any>({});
+  const [unlockedSections, setUnlockedSections] = useState<Set<string>>(new Set(['project-information']));
 
   const brdDocumentSections: DocumentSection[] = [
     {
@@ -215,6 +223,143 @@ export default function ProjectDocumentCreator({ onBack, projectName, userRole =
   ];
 
   const documentSections = userRole === 'project_owner' ? brdDocumentSections : tddDocumentSections;
+
+  // Fetch all section data on component mount
+  useEffect(() => {
+    if (projectId) {
+      fetchAllSectionData();
+    } else {
+      setIsLoading(false);
+    }
+  }, [projectId]);
+
+  const fetchAllSectionData = async () => {
+    if (!projectId) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log('Fetching data for project:', projectId);
+
+      // Define the sections to fetch
+      const sections = [
+        { key: 'projectInformation', endpoint: 'project-information' },
+        { key: 'modules', endpoint: 'modules' },
+        { key: 'userStories', endpoint: 'user-stories' },
+        { key: 'features', endpoint: 'features' },
+        { key: 'businessRules', endpoint: 'business-rules' },
+        { key: 'uiux', endpoint: 'uiux' },
+        { key: 'actions', endpoint: 'actions' },
+        { key: 'techStack', endpoint: 'tech-stack' }
+      ];
+
+      const fetchedData: any = {};
+      const newUnlockedSections = new Set(['project-information']);
+
+      // Fetch all sections in parallel
+      const promises = sections.map(async (section) => {
+        try {
+          const response = await apiClient.get(`/projects/${projectId}/${section.endpoint}`);
+          return { key: section.key, data: response };
+        } catch (error) {
+          console.error(`Error fetching ${section.key}:`, error);
+          return { key: section.key, data: null };
+        }
+      });
+
+      const results = await Promise.all(promises);
+
+      // Process results and determine which sections to unlock
+      results.forEach(({ key, data }) => {
+        if (data) {
+          fetchedData[key] = data;
+          
+          // Check if section has data and unlock next section accordingly
+          if (key === 'projectInformation' && data.projectInformation) {
+            // If project information exists, unlock modules
+            newUnlockedSections.add('modules');
+          } else if (key === 'modules' && data.modules && data.modules.length > 0) {
+            // If modules exist, unlock user stories and features
+            newUnlockedSections.add('user-stories');
+            newUnlockedSections.add('features');
+          } else if ((key === 'userStories' && data.userStories && data.userStories.length > 0) ||
+                     (key === 'features' && data.features && data.features.length > 0)) {
+            // If user stories or features exist, unlock business rules
+            newUnlockedSections.add('business-rules');
+          } else if (key === 'businessRules' && data.businessRules) {
+            // If business rules exist, unlock UI/UX
+            newUnlockedSections.add('uiux');
+          } else if (key === 'uiux' && (data.guidelines || data.uiuxGuidelines)) {
+            // If UI/UX exists, unlock actions
+            newUnlockedSections.add('actions');
+          } else if (key === 'actions' && data.actions) {
+            // If actions exist, unlock tech stack
+            newUnlockedSections.add('tech-stack');
+          }
+        }
+      });
+
+      setSectionsData(fetchedData);
+      setUnlockedSections(newUnlockedSections);
+
+      // Show status message
+      const dataCount = Object.values(fetchedData).filter(v => v).length;
+      if (dataCount > 0) {
+        toast.success(`Loaded ${dataCount} sections with existing data`);
+      } else {
+        toast.info('Starting fresh - fill in Project Overview to begin');
+      }
+
+    } catch (error) {
+      console.error('Error fetching section data:', error);
+      toast.error('Failed to load project data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveProjectInformation = async () => {
+    if (!projectId) {
+      toast.error('Project ID is required');
+      return;
+    }
+
+    try {
+      // Collect data from form fields
+      const visionElement = document.getElementById('vision') as HTMLTextAreaElement;
+      const purposeElement = document.getElementById('purpose') as HTMLTextAreaElement;
+      const objectivesElement = document.getElementById('objectives') as HTMLTextAreaElement;
+      const scopeElement = document.getElementById('scope') as HTMLTextAreaElement;
+
+      const projectInfo = {
+        vision: visionElement?.value || '',
+        purpose: purposeElement?.value || '',
+        objectives: objectivesElement?.value || '',
+        projectScope: scopeElement?.value || ''
+      };
+
+      // Validate that at least some fields are filled
+      if (!projectInfo.vision && !projectInfo.purpose && !projectInfo.objectives && !projectInfo.projectScope) {
+        toast.error('Please fill in at least one field');
+        return;
+      }
+
+      await apiClient.post(`/projects/${projectId}/project-information`, projectInfo);
+      
+      // After successful save, unlock the next section
+      setUnlockedSections(prev => new Set([...prev, 'modules']));
+      
+      toast.success('Project information saved! Modules section is now unlocked.');
+      
+      // Refresh data
+      await fetchAllSectionData();
+    } catch (error) {
+      console.error('Error saving project information:', error);
+      toast.error('Failed to save project information');
+    }
+  };
 
   const handleFileUpload = (sectionId: string, file: File | null) => {
     setDocumentData(prev => ({
@@ -394,6 +539,31 @@ export default function ProjectDocumentCreator({ onBack, projectName, userRole =
   const docType = isProjectOwner ? 'BRD' : 'TDD';
   const docTypeFull = isProjectOwner ? 'Business Requirement Document' : 'Technical Design Document';
 
+  // Section configuration for the flow
+  const sectionFlow = [
+    { id: 'project-information', title: 'Project Overview', icon: FileText },
+    { id: 'modules', title: 'Modules', icon: Blocks },
+    { id: 'user-stories', title: 'User Stories', icon: ClipboardList },
+    { id: 'features', title: 'Features & Tasks', icon: Sparkles },
+    { id: 'business-rules', title: 'Business Rules', icon: Shield },
+    { id: 'uiux', title: 'UI/UX Guidelines', icon: Layout },
+    { id: 'actions', title: 'Actions & Interactions', icon: Network },
+    { id: 'tech-stack', title: 'Technology Stack', icon: Code }
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 animate-pulse">
+            <Sparkles className="w-8 h-8 text-primary" />
+          </div>
+          <p className="text-muted-foreground">Loading project data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
@@ -430,132 +600,209 @@ export default function ProjectDocumentCreator({ onBack, projectName, userRole =
           </div>
         </div>
 
-        {/* Main Content */}
-        <Tabs defaultValue={isProjectOwner ? 'meeting' : 'architecture'} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 bg-card/50 border border-primary/20">
-            {isProjectOwner ? (
-              <>
-                <TabsTrigger value="meeting" className="data-[state=active]:bg-primary/20">
-                  Meeting Documents
-                  <Badge variant="secondary" className="ml-2">
-                    {getSectionsByCategory('meeting').filter(s => 
-                      documentData[s.id]?.file || documentData[s.id]?.text?.trim()
-                    ).length}
-                  </Badge>
-                </TabsTrigger>
-                <TabsTrigger value="scope" className="data-[state=active]:bg-primary/20">
-                  Scope & Requirements
-                  <Badge variant="secondary" className="ml-2">
-                    {getSectionsByCategory('scope').filter(s => 
-                      documentData[s.id]?.file || documentData[s.id]?.text?.trim()
-                    ).length}
-                  </Badge>
-                </TabsTrigger>
-                <TabsTrigger value="other" className="data-[state=active]:bg-primary/20">
-                  Other Documents
-                  <Badge variant="secondary" className="ml-2">
-                    {getSectionsByCategory('other').filter(s => 
-                      documentData[s.id]?.file || documentData[s.id]?.text?.trim()
-                    ).length}
-                  </Badge>
-                </TabsTrigger>
-              </>
-            ) : (
-              <>
-                <TabsTrigger value="architecture" className="data-[state=active]:bg-primary/20">
-                  Architecture & Design
-                  <Badge variant="secondary" className="ml-2">
-                    {getSectionsByCategory('architecture').filter(s => 
-                      documentData[s.id]?.file || documentData[s.id]?.text?.trim()
-                    ).length}
-                  </Badge>
-                </TabsTrigger>
-                <TabsTrigger value="technical" className="data-[state=active]:bg-primary/20">
-                  Technical Specifications
-                  <Badge variant="secondary" className="ml-2">
-                    {getSectionsByCategory('technical').filter(s => 
-                      documentData[s.id]?.file || documentData[s.id]?.text?.trim()
-                    ).length}
-                  </Badge>
-                </TabsTrigger>
-                <TabsTrigger value="techOther" className="data-[state=active]:bg-primary/20">
-                  Other Technical Docs
-                  <Badge variant="secondary" className="ml-2">
-                    {getSectionsByCategory('techOther').filter(s => 
-                      documentData[s.id]?.file || documentData[s.id]?.text?.trim()
-                    ).length}
-                  </Badge>
-                </TabsTrigger>
-              </>
-            )}
-          </TabsList>
-
-          {isProjectOwner ? (
-            <>
-              <TabsContent value="meeting" className="space-y-4">
-                <ScrollArea className="h-[calc(100vh-24rem)]">
-                  <div className="space-y-4 pr-4">
-                    {getSectionsByCategory('meeting').map(renderDocumentSection)}
+        {/* Section Progress Indicator */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium">Setup Progress</h3>
+            <Badge variant="outline" className="text-primary border-primary/50">
+              {unlockedSections.size - 1} / {sectionFlow.length - 1} sections unlocked
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            {sectionFlow.map((section, index) => {
+              const Icon = section.icon;
+              const isUnlocked = unlockedSections.has(section.id);
+              const hasData = sectionsData[section.id.replace('-', '')] && 
+                            Object.keys(sectionsData[section.id.replace('-', '')]).length > 0;
+              
+              return (
+                <div key={section.id} className="flex items-center flex-1">
+                  <div 
+                    className={`flex items-center justify-center w-10 h-10 rounded-full transition-all ${
+                      isUnlocked 
+                        ? hasData 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'bg-primary/20 text-primary border-2 border-primary'
+                        : 'bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {hasData ? (
+                      <CheckCircle className="w-5 h-5" />
+                    ) : isUnlocked ? (
+                      <Icon className="w-5 h-5" />
+                    ) : (
+                      <Lock className="w-5 h-5" />
+                    )}
                   </div>
-                </ScrollArea>
-              </TabsContent>
+                  {index < sectionFlow.length - 1 && (
+                    <div className={`flex-1 h-0.5 mx-2 ${
+                      unlockedSections.has(sectionFlow[index + 1].id) 
+                        ? 'bg-primary' 
+                        : 'bg-muted'
+                    }`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-4 gap-2 mt-2 text-xs">
+            {sectionFlow.map((section) => (
+              <div key={section.id} className="text-center text-muted-foreground">
+                {section.title}
+              </div>
+            ))}
+          </div>
+        </div>
 
-              <TabsContent value="scope" className="space-y-4">
-                <ScrollArea className="h-[calc(100vh-24rem)]">
-                  <div className="space-y-4 pr-4">
-                    {getSectionsByCategory('scope').map(renderDocumentSection)}
+        {/* Main Content - Project Overview Section */}
+        <div className="space-y-6">
+          {/* Project Overview Card */}
+          <Card className={`border-primary/20 bg-card/80 ${
+            unlockedSections.has('project-information') ? '' : 'opacity-50 pointer-events-none'
+          }`}>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <FileText className="w-5 h-5 text-primary" />
                   </div>
-                </ScrollArea>
-              </TabsContent>
+                  <div>
+                    <CardTitle>Project Overview</CardTitle>
+                    <CardDescription>Define your project's vision, purpose, and objectives</CardDescription>
+                  </div>
+                </div>
+                {sectionsData.projectInformation?.projectInformation && (
+                  <Badge variant="default" className="bg-primary">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Completed
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="vision">Vision</Label>
+                <Textarea
+                  id="vision"
+                  placeholder="What is the long-term vision for this project?"
+                  className="min-h-[80px]"
+                  defaultValue={sectionsData.projectInformation?.projectInformation?.vision || ''}
+                />
+              </div>
+              <div>
+                <Label htmlFor="purpose">Purpose</Label>
+                <Textarea
+                  id="purpose"
+                  placeholder="What is the main purpose of this project?"
+                  className="min-h-[80px]"
+                  defaultValue={sectionsData.projectInformation?.projectInformation?.purpose || ''}
+                />
+              </div>
+              <div>
+                <Label htmlFor="objectives">Objectives</Label>
+                <Textarea
+                  id="objectives"
+                  placeholder="What are the key objectives to achieve?"
+                  className="min-h-[80px]"
+                  defaultValue={sectionsData.projectInformation?.projectInformation?.objectives || ''}
+                />
+              </div>
+              <div>
+                <Label htmlFor="scope">Project Scope</Label>
+                <Textarea
+                  id="scope"
+                  placeholder="Define the boundaries and scope of the project"
+                  className="min-h-[80px]"
+                  defaultValue={sectionsData.projectInformation?.projectInformation?.projectScope || ''}
+                />
+              </div>
+              
+              <div className="flex justify-end pt-4">
+                <Button 
+                  onClick={handleSaveProjectInformation}
+                  className="gap-2 bg-primary hover:bg-primary/90"
+                >
+                  <Save className="w-4 h-4" />
+                  Save and Continue
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-              <TabsContent value="other" className="space-y-4">
-                <ScrollArea className="h-[calc(100vh-24rem)]">
-                  <div className="space-y-4 pr-4">
-                    {getSectionsByCategory('other').map(renderDocumentSection)}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
-            </>
-          ) : (
-            <>
-              <TabsContent value="architecture" className="space-y-4">
-                <ScrollArea className="h-[calc(100vh-24rem)]">
-                  <div className="space-y-4 pr-4">
-                    {getSectionsByCategory('architecture').map(renderDocumentSection)}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
-
-              <TabsContent value="technical" className="space-y-4">
-                <ScrollArea className="h-[calc(100vh-24rem)]">
-                  <div className="space-y-4 pr-4">
-                    {getSectionsByCategory('technical').map(renderDocumentSection)}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
-
-              <TabsContent value="techOther" className="space-y-4">
-                <ScrollArea className="h-[calc(100vh-24rem)]">
-                  <div className="space-y-4 pr-4">
-                    {getSectionsByCategory('techOther').map(renderDocumentSection)}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
-            </>
-          )}
-        </Tabs>
-
-        {/* Generate Button */}
-        <div className="fixed bottom-6 right-6 flex gap-3">
-          <Button
-            size="lg"
-            onClick={handleGenerateDocument}
-            disabled={isGenerating || getFilledCount() === 0}
-            className="bg-primary hover:bg-primary/90 neon-glow"
-          >
-            <Sparkles className="w-5 h-5 mr-2" />
-            {isGenerating ? 'Generating...' : 'Generate with AI'}
-          </Button>
+          {/* Other Sections - Show as locked/unlocked cards */}
+          <div className="grid gap-4">
+            {sectionFlow.slice(1).map((section) => {
+              const Icon = section.icon;
+              const isUnlocked = unlockedSections.has(section.id);
+              const sectionKey = section.id.replace('-', '');
+              const hasData = sectionsData[sectionKey] && 
+                            Object.keys(sectionsData[sectionKey]).length > 0;
+              
+              return (
+                <Card 
+                  key={section.id}
+                  className={`border-primary/20 bg-card/80 transition-all ${
+                    !isUnlocked ? 'opacity-50' : ''
+                  }`}
+                >
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${
+                          isUnlocked ? 'bg-primary/10' : 'bg-muted'
+                        }`}>
+                          {isUnlocked ? (
+                            <Icon className="w-5 h-5 text-primary" />
+                          ) : (
+                            <Lock className="w-5 h-5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">{section.title}</CardTitle>
+                          <CardDescription className="text-sm">
+                            {isUnlocked 
+                              ? hasData 
+                                ? 'Data loaded - Click to view/edit'
+                                : 'Ready to configure'
+                              : 'Complete previous sections to unlock'
+                            }
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {hasData && (
+                          <Badge variant="default" className="bg-primary">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Has Data
+                          </Badge>
+                        )}
+                        {!isUnlocked && (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            <Lock className="w-3 h-3 mr-1" />
+                            Locked
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  {isUnlocked && (
+                    <CardContent>
+                      <Button 
+                        variant="outline" 
+                        className="w-full"
+                        onClick={() => {
+                          // Navigate to the appropriate section in the main app
+                          toast.info(`Navigate to ${section.title} section`);
+                        }}
+                      >
+                        {hasData ? 'View & Edit' : 'Configure'} {section.title}
+                      </Button>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
